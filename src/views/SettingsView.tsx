@@ -54,7 +54,7 @@ export const SettingsView: React.FC = () => {
   const handleProviderChange = (provider: VisionProvider) => {
     const defaultModel =
       provider === 'gemini'
-        ? 'gemini-2.5-flash'
+        ? 'gemini-flash-latest'
         : provider === 'openai'
           ? 'gpt-4o-mini'
           : settings.model;
@@ -314,7 +314,7 @@ export const SettingsView: React.FC = () => {
             <li>Pulsa en <strong>Get API key</strong> → <strong>Create API key</strong>.</li>
             <li>
               Copia la clave (empieza por <code>AIza...</code>) y pégala arriba con el proveedor{' '}
-              <strong>Gemini</strong> y modelo <code>gemini-2.5-flash</code>.
+              <strong>Gemini</strong> y modelo <code>gemini-flash-latest</code>.
             </li>
             <li>
               Tu clave nunca sale de tu dispositivo salvo para enviar la foto directamente al API

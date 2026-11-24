@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ScanLine,
   Settings,
+  Users,
 } from 'lucide-react';
 import type { TabId } from '../types';
 import { OwlLogo } from './OwlLogo';
@@ -17,19 +18,20 @@ interface LayoutProps {
 }
 
 const TABS: Array<{ id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'calendar', label: 'Calendario', icon: CalendarDays },
+  { id: 'calendar', label: 'Mi Turno', icon: CalendarDays },
+  { id: 'team', label: 'Todos', icon: Users },
   { id: 'roster', label: 'Cuadrante', icon: ScanLine },
   { id: 'swaps', label: 'Cambios', icon: ArrowLeftRight },
   { id: 'stats', label: 'Stats', icon: BarChart3 },
-  { id: 'settings', label: 'Ajustes', icon: Settings },
 ];
 
 const TAB_TITLES: Record<TabId, string> = {
-  calendar: 'Turnos del Equipo',
+  calendar: 'Calendario de ZETO',
+  team: 'Turnos de Todo el Equipo',
   roster: 'Cuadrante Original',
   swaps: 'Cambios y Deudas',
   stats: 'Estadísticas',
-  settings: 'Configuración',
+  settings: 'Ajustes y Equipo',
 };
 
 export const Layout: React.FC<LayoutProps> = ({
@@ -44,7 +46,7 @@ export const Layout: React.FC<LayoutProps> = ({
       <header className="sticky top-0 z-30 glass-bar border-b border-slate-800/80 pt-safe">
         <div className="max-w-3xl mx-auto px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <OwlLogo className="w-8 h-8 rounded-xl shadow-md shadow-amber-500/10" />
+            <OwlLogo className="w-9 h-9 rounded-xl shadow-md shadow-amber-500/15" />
             <div className="leading-tight">
               <div className="flex items-center gap-1.5">
                 <span className="font-bold tracking-wider text-sm text-white">BEW</span>
@@ -56,9 +58,23 @@ export const Layout: React.FC<LayoutProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400/90 animate-pulse" />
-            <span>Offline OK</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 text-[11px] text-slate-400 mr-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-400/90" />
+              <span className="hidden xs:inline">Offline</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onTabChange('settings')}
+              className={`p-2 rounded-xl border transition-colors ${
+                activeTab === 'settings'
+                  ? 'bg-amber-500 text-[#0B0F17] border-amber-400'
+                  : 'bg-slate-900/90 border-slate-700/80 text-slate-300 hover:text-white'
+              }`}
+              aria-label="Ajustes"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>

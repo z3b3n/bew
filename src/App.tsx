@@ -42,6 +42,16 @@ export const App: React.FC = () => {
     >
       {activeTab === 'calendar' && (
         <CalendarView
+          mode="zeto"
+          monthKey={monthKey}
+          onMonthChange={setMonthKey}
+          onOpenSwap={(date, shift) => setSwapModalState({ open: true, date, shift })}
+        />
+      )}
+
+      {activeTab === 'team' && (
+        <CalendarView
+          mode="team"
           monthKey={monthKey}
           onMonthChange={setMonthKey}
           onOpenSwap={(date, shift) => setSwapModalState({ open: true, date, shift })}

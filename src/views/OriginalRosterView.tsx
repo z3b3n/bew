@@ -39,6 +39,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     addUser,
     batchApplyShifts,
     setHolidaysBatch,
+    updateSettings,
   } = useApp();
 
   const [roster, setRoster] = useState<RosterImage | null>(null);
@@ -108,6 +109,9 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     setScanning(true);
     try {
       const scanned = await scanRosterImage(blob, monthKey, settings);
+      if (scanned.resolvedModel && scanned.resolvedModel !== settings.model) {
+        await updateSettings({ ...settings, model: scanned.resolvedModel });
+      }
       const report = buildRosterDiff(scanned, users, shiftMap);
       setDiffReport(report);
     } catch (err) {

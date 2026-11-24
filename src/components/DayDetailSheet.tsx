@@ -18,12 +18,22 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
   onClose,
   onOpenSwap,
 }) => {
-  const { users, primaryUser, shiftMap, holidaySet, upsertShift, toggleHoliday } = useApp();
+  const { users, primaryUser, shiftMap, holidaySet, swaps, upsertShift, toggleHoliday } = useApp();
 
   const targetUser = users.find((u) => u.id === targetUserId) ?? primaryUser;
   const currentEntry = shiftMap.get(`${targetUser.id}_${date}`);
   const currentShift = currentEntry?.shift;
   const isHoliday = holidaySet.has(date);
+
+  const daySwaps = swaps.filter(
+    (s) => s.dateGiven === date || s.dateCovered === date || s.debtDate === date
+  );
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const handleSelectShift = async (code: ShiftCode | null) => {
+    await upsertShift(targetUser.id, date, code);
+    onClose();
+  };
 
   const teammatesWorking = users
     .filter((u) => u.id !== targetUser.id)
@@ -59,6 +69,11 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
                   Festivo
                 </span>
               )}
+              {daySwaps.length > 0 && (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40">
+                  Con cambio ⇄
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               Editando turno de{' '}
@@ -77,7 +92,35 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
           </button>
         </div>
 
-        {/* Selector rápido de turnos */}
+        {/* Cambios registrados en este día */}
+        {daySwaps.length > 0 && (
+          <div className="mb-3 space-y-1.5">
+            {daySwaps.map((sw) => {
+              const tm = userMap.get(sw.teammateId);
+              return (
+                <div
+                  key={sw.id}
+                  className="px-3 py-2 rounded-xl bg-fuchsia-500/15 border border-fuchsia-400/45 text-xs text-fuchsia-200 flex items-center gap-2"
+                >
+                  <ArrowLeftRight className="w-4 h-4 text-fuchsia-300 shrink-0" />
+                  <span>
+                    {sw.type === 'exchange'
+                      ? `Intercambio 1x1 con ${tm?.name ?? 'compañero'}: cede ${
+                          sw.dateGiven ? formatShortDateEs(sw.dateGiven) : ''
+                        } (${sw.shiftGiven}) ↔ cubre ${
+                          sw.dateCovered ? formatShortDateEs(sw.dateCovered) : ''
+                        } (${sw.shiftCovered})`
+                      : `${sw.direction === 'owed_to_me' ? 'A favor' : 'Debes'} con ${
+                          tm?.name ?? 'compañero'
+                        } (${sw.debtShift})`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Selector rápido de turnos (vuelve automáticamente al cuadrante) */}
         <div className="grid grid-cols-4 gap-2 mb-4">
           {SHIFT_ORDER.map((code) => {
             const def = SHIFT_DEFINITIONS[code];
@@ -86,20 +129,20 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
               <button
                 key={code}
                 type="button"
-                onClick={() => void upsertShift(targetUser.id, date, code)}
-                className={`p-2.5 rounded-2xl border text-left transition-all ${
+                onClick={() => void handleSelectShift(code)}
+                className={`p-2.5 rounded-2xl border text-left transition-all active:scale-95 ${
                   selected
-                    ? `${def.badgeBg} ${def.badgeBorder} ring-2 ring-amber-400/70`
-                    : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                    ? `${def.cellBg} ${def.badgeBorder} ring-2 ring-amber-400/80`
+                    : `${def.cellBg} border-slate-800 hover:border-slate-600`
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <span className={`text-sm font-bold ${def.badgeText}`}>{code}</span>
-                  <span className="text-[10px] text-slate-400">{def.totalHours}h</span>
+                  <span className="text-[10px] text-slate-300">{def.totalHours}h</span>
                 </div>
-                <div className="text-[11px] text-slate-300 truncate mt-0.5">{def.shortLabel}</div>
+                <div className="text-[11px] text-slate-200 truncate mt-0.5">{def.shortLabel}</div>
                 {def.startTime && (
-                  <div className="text-[10px] text-slate-500">
+                  <div className="text-[10px] text-slate-400">
                     {def.startTime}–{def.endTime}
                   </div>
                 )}
@@ -109,8 +152,8 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
 
           <button
             type="button"
-            onClick={() => void upsertShift(targetUser.id, date, null)}
-            className="p-2.5 rounded-2xl border border-slate-800 bg-slate-900/50 hover:border-rose-500/40 text-left flex flex-col justify-between"
+            onClick={() => void handleSelectShift(null)}
+            className="p-2.5 rounded-2xl border border-slate-800 bg-slate-900/50 hover:border-rose-500/40 text-left flex flex-col justify-between active:scale-95"
           >
             <div className="flex items-center justify-between text-slate-400">
               <Trash2 className="w-4 h-4" />

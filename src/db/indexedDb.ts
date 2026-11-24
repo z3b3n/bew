@@ -63,7 +63,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   id: 'app',
   visionProvider: 'gemini',
   apiKey: '',
-  model: 'gemini-2.5-flash',
+  model: 'gemini-flash-latest',
   customEndpoint: '',
   nightHoursMode: 'statutory',
 };
@@ -223,7 +223,13 @@ export async function removeSwap(id: string): Promise<void> {
 export async function getSettings(): Promise<AppSettings> {
   const db = await getDb();
   const s = await db.get('settings', 'app');
-  return s ?? DEFAULT_SETTINGS;
+  if (!s) return DEFAULT_SETTINGS;
+  if (s.visionProvider === 'gemini' && s.model === 'gemini-2.5-flash') {
+    const migrated = { ...s, model: 'gemini-flash-latest' };
+    await db.put('settings', migrated);
+    return migrated;
+  }
+  return s;
 }
 
 export async function putSettings(settings: AppSettings): Promise<void> {

@@ -70,4 +70,4 @@ export interface AppSettings {
   nightHoursMode: NightHoursMode;
 }
 
-export type TabId = 'calendar' | 'roster' | 'swaps' | 'stats' | 'settings';
+export type TabId = 'calendar' | 'team' | 'roster' | 'swaps' | 'stats' | 'settings';
