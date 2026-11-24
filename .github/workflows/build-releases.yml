@@ -150,20 +150,22 @@ jobs:
 
       - name: Generate temporary Garmin developer key
         run: |
-          openssl genrsa -out "$RUNNER_TEMP/developer_key.pem" 4096
-          openssl pkcs8 -topk8 -inform PEM -outform DER -in "$RUNNER_TEMP/developer_key.pem" -out "$RUNNER_TEMP/developer_key.der" -nocrypt
+          openssl genrsa -out ./developer_key.pem 4096
+          openssl pkcs8 -topk8 -inform PEM -outform DER -in ./developer_key.pem -out ./developer_key.der -nocrypt
 
       - name: Build Garmin Widget for Fenix 6X Pro
         uses: blackshadev/garmin-connectiq-build-action@9.2.0
         with:
           projectJungle: ./garmin/monkey.jungle
-          developerKey: ${{ runner.temp }}/developer_key.der
+          developerKey: ./developer_key.der
           outputPath: BEW-Fenix6XPro.prg
           device: fenix6xpro
           typeCheck: '0'
 
-      - name: Verify PRG output
-        run: ls -lh BEW-Fenix6XPro.prg
+      - name: Verify PRG output & clean key
+        run: |
+          rm -f ./developer_key.pem ./developer_key.der
+          ls -lh BEW-Fenix6XPro.prg
 
       - name: Upload BEW-Fenix6XPro.prg artifact
         uses: actions/upload-artifact@v4
