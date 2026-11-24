@@ -1,0 +1,8 @@
+<settings>
+    <setting propertyKey="@Properties.month1Data" title="@Strings.Month1Title">
+        <settingConfig type="alphaNumeric" />
+    </setting>
+    <setting propertyKey="@Properties.month2Data" title="@Strings.Month2Title">
+        <settingConfig type="alphaNumeric" />
+    </setting>
+</settings>

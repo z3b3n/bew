@@ -65,6 +65,17 @@ Descarga **`BEW-Android.apk`** desde la sección **Releases** e instálalo direc
 
 ---
 
+## Instalación en Garmin Fenix 6X Pro
+1. Descarga **`BEW-Fenix6XPro.prg`** desde la sección **Releases**.
+2. Conecta tu **Garmin Fenix 6X Pro** por USB al ordenador.
+3. Copia `BEW-Fenix6XPro.prg` dentro de la carpeta **`GARMIN/APPS/`** del reloj y desconéctalo de forma segura.
+4. En el reloj, desliza por los widgets (Glances) para ver **BEW · HOY** y el turno de mañana; pulsa **START** para abrir el widget completo:
+   - **UP / DOWN:** cambiar de día.
+   - **START/SELECT:** cambiar el turno del día (`M → T → N → AD → AN → L`) y guardarlo en el reloj.
+   - **Mantener UP (Menú):** ir a **Hoy** o ver el **Resumen del Mes** (horas totales y conteo de turnos).
+
+---
+
 ## Cómo configurar la API Key de Visión (Escaneo IA)
 
 La clave se guarda **únicamente en el almacenamiento local (IndexedDB)** de tu dispositivo.
