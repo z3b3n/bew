@@ -12,23 +12,37 @@ interface DayDetailSheetProps {
   onOpenSwap: (date: string, currentShift?: ShiftCode) => void;
 }
 
+const HOLIDAY_SHIFT_ORDER: ShiftCode[] = ['AD', 'AN', 'L'];
+
 export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
   date,
   targetUserId,
   onClose,
   onOpenSwap,
 }) => {
-  const { users, primaryUser, shiftMap, holidaySet, swaps, upsertShift, toggleHoliday } = useApp();
+  const {
+    users,
+    primaryUser,
+    shiftMap,
+    holidays,
+    holidaySet,
+    swaps,
+    upsertShift,
+    toggleHoliday,
+  } = useApp();
 
   const targetUser = users.find((u) => u.id === targetUserId) ?? primaryUser;
   const currentEntry = shiftMap.get(`${targetUser.id}_${date}`);
   const currentShift = currentEntry?.shift;
   const isHoliday = holidaySet.has(date);
+  const holidayObj = holidays.find((h) => h.date === date);
 
   const daySwaps = swaps.filter(
     (s) => s.dateGiven === date || s.dateCovered === date || s.debtDate === date
   );
   const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const availableShifts = isHoliday ? HOLIDAY_SHIFT_ORDER : SHIFT_ORDER;
 
   const handleSelectShift = async (code: ShiftCode | null) => {
     await upsertShift(targetUser.id, date, code);
@@ -58,15 +72,15 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
       >
         <div className="w-10 h-1 rounded-full bg-slate-700 mx-auto mb-3" />
 
-        <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-bold text-white capitalize">
                 {formatShortDateEs(date)}
               </h3>
               {isHoliday && (
                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40">
-                  Festivo
+                  ★ {holidayObj?.name ? holidayObj.name : 'Festivo'}
                 </span>
               )}
               {daySwaps.length > 0 && (
@@ -90,6 +104,38 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Interruptor Día Festivo arriba para activar reglas AD / AN */}
+        <div className="mb-3 space-y-2">
+          <button
+            type="button"
+            onClick={() => void toggleHoliday(date)}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-colors ${
+              isHoliday
+                ? 'bg-rose-500/20 border-rose-500/50 text-rose-200'
+                : 'bg-slate-900/70 border-slate-800 text-slate-300'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-rose-400" />
+              <span>{isHoliday ? 'Día Festivo activado' : 'Marcar como Día Festivo'}</span>
+            </span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                isHoliday ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-400'
+              }`}
+            >
+              {isHoliday ? 'SÍ' : 'NO'}
+            </span>
+          </button>
+
+          {isHoliday && (
+            <div className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-[11px] text-rose-200">
+              Día festivo (fiesta): los turnos de servicio son siempre{' '}
+              <strong>Arco Diurno (AD)</strong> o <strong>Arco Nocturno (AN)</strong>.
+            </div>
+          )}
         </div>
 
         {/* Cambios registrados en este día */}
@@ -121,8 +167,8 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
         )}
 
         {/* Selector rápido de turnos (vuelve automáticamente al cuadrante) */}
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {SHIFT_ORDER.map((code) => {
+        <div className={`grid ${isHoliday ? 'grid-cols-3' : 'grid-cols-4'} gap-2 mb-4`}>
+          {availableShifts.map((code) => {
             const def = SHIFT_DEFINITIONS[code];
             const selected = currentShift === code;
             return (
@@ -162,35 +208,20 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
           </button>
         </div>
 
-        {/* Switch Festivo + Botón Cambio */}
-        <div className="flex flex-wrap items-center gap-2 mb-5">
+        {/* Botón Cambio */}
+        {targetUser.id === primaryUser.id && (
           <button
             type="button"
-            onClick={() => void toggleHoliday(date)}
-            className={`flex-1 min-w-[160px] flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-colors ${
-              isHoliday
-                ? 'bg-rose-500/20 border-rose-500/50 text-rose-200'
-                : 'bg-slate-800/70 border-slate-700 text-slate-300'
-            }`}
+            onClick={() => {
+              onClose();
+              onOpenSwap(date, currentShift);
+            }}
+            className="w-full mb-5 flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500 text-[#0B0F17] text-xs font-bold shadow-lg shadow-amber-500/20"
           >
-            <Sparkles className="w-4 h-4" />
-            {isHoliday ? 'Día marcado como Festivo' : 'Marcar día como Festivo'}
+            <ArrowLeftRight className="w-4 h-4" />
+            Gestionar cambio de turno
           </button>
-
-          {targetUser.id === primaryUser.id && (
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenSwap(date, currentShift);
-              }}
-              className="flex-1 min-w-[160px] flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500 text-[#0B0F17] text-xs font-bold shadow-lg shadow-amber-500/20"
-            >
-              <ArrowLeftRight className="w-4 h-4" />
-              Gestionar cambio
-            </button>
-          )}
-        </div>
+        )}
 
         {/* Compañeros ese día */}
         <div className="border-t border-slate-800 pt-3.5">

@@ -250,7 +250,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {hasSwap && (
                           <ArrowLeftRight className="w-3 h-3 text-fuchsia-300" />
                         )}
-                        {isHoliday && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
+                        {isHoliday && (
+                          <span className="text-[10px] leading-none text-rose-400">★</span>
+                        )}
                       </div>
                     </div>
 
@@ -267,6 +269,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           {def.isWorking ? `${def.totalHours}h` : def.shortLabel}
                         </span>
                       </>
+                    ) : isHoliday ? (
+                      <span className="text-[10px] font-semibold text-rose-300/90 mb-1.5">
+                        Festivo
+                      </span>
                     ) : (
                       <span className="text-xs text-slate-600 mb-2">—</span>
                     )}
@@ -290,7 +296,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <ArrowLeftRight className="w-3 h-3" /> Cambio
               </span>
               <span className="flex items-center gap-1 text-rose-300 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-rose-400" /> Festivo
+                <span>★</span> Festivo (AD/AN)
               </span>
             </div>
           </div>

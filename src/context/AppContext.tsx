@@ -43,6 +43,8 @@ interface AppContextValue {
   batchApplyShifts: (entries: ShiftEntry[]) => Promise<void>;
   toggleHoliday: (date: string, name?: string) => Promise<void>;
   setHolidaysBatch: (dates: string[]) => Promise<void>;
+  upsertHolidayEntries: (entries: Array<{ date: string; name?: string }>) => Promise<void>;
+  deleteHolidayEntry: (date: string) => Promise<void>;
   addUser: (user: Omit<User, 'id' | 'createdAt' | 'isPrimary'>) => Promise<User>;
   updateUser: (user: User) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
@@ -184,6 +186,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [holidaySet]
   );
 
+  const upsertHolidayEntries = useCallback(
+    async (items: Array<{ date: string; name?: string }>) => {
+      const saved: HolidayEntry[] = [];
+      for (const item of items) {
+        const entry: HolidayEntry = {
+          date: item.date,
+          monthKey: getMonthKey(item.date),
+          name: item.name?.trim() || undefined,
+        };
+        await putHoliday(entry);
+        saved.push(entry);
+      }
+      if (saved.length > 0) {
+        setHolidays((prev) => {
+          const map = new Map(prev.map((h) => [h.date, h]));
+          for (const h of saved) {
+            map.set(h.date, h);
+          }
+          return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+        });
+      }
+    },
+    []
+  );
+
+  const deleteHolidayEntry = useCallback(async (date: string) => {
+    await removeHoliday(date);
+    setHolidays((prev) => prev.filter((h) => h.date !== date));
+  }, []);
+
   const addUser = useCallback(async (data: Omit<User, 'id' | 'createdAt' | 'isPrimary'>) => {
     const newUser: User = {
       ...data,
@@ -266,6 +298,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batchApplyShifts,
       toggleHoliday,
       setHolidaysBatch,
+      upsertHolidayEntries,
+      deleteHolidayEntry,
       addUser,
       updateUser,
       deleteUser,
@@ -289,6 +323,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batchApplyShifts,
       toggleHoliday,
       setHolidaysBatch,
+      upsertHolidayEntries,
+      deleteHolidayEntry,
       addUser,
       updateUser,
       deleteUser,

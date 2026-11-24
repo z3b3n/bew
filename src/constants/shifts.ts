@@ -156,7 +156,7 @@ export const SHIFT_DEFINITIONS: Record<ShiftCode, ShiftDefinition> = {
   },
 };
 
-export const SHIFT_ORDER: ShiftCode[] = ['M', 'T', 'N', 'AN', 'AD', 'L', 'F'];
+export const SHIFT_ORDER: ShiftCode[] = ['M', 'T', 'N', 'AN', 'AD', 'L'];
 export const WORKING_SHIFTS: WorkingShiftCode[] = ['M', 'T', 'N', 'AN', 'AD'];
 
 export const USER_COLOR_PALETTE = [

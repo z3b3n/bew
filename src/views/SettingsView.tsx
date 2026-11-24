@@ -9,6 +9,7 @@ import {
   Plus,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   Trash2,
   Upload,
   UserPlus,
@@ -19,8 +20,22 @@ import { exportBackupJson, importBackupJson } from '../db/indexedDb';
 import type { VisionProvider } from '../types';
 
 export const SettingsView: React.FC = () => {
-  const { users, settings, addUser, updateUser, deleteUser, updateSettings, refreshAll } =
-    useApp();
+  const {
+    users,
+    holidays,
+    settings,
+    addUser,
+    updateUser,
+    deleteUser,
+    upsertHolidayEntries,
+    deleteHolidayEntry,
+    updateSettings,
+    refreshAll,
+  } = useApp();
+
+  // Nuevo festivo
+  const [holidayDate, setHolidayDate] = useState('');
+  const [holidayName, setHolidayName] = useState('');
 
   // Nuevo compañero
   const [newName, setNewName] = useState('');
@@ -206,6 +221,100 @@ export const SettingsView: React.FC = () => {
             </button>
           </div>
         </form>
+      </section>
+
+      {/* Días Festivos (siempre AD o AN) */}
+      <section className="tactical-card rounded-2xl p-3.5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-rose-400" />
+            <h3 className="text-sm font-bold text-white">Días Festivos (AD / AN)</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const yr = new Date().getFullYear();
+              void upsertHolidayEntries([
+                { date: `${yr}-01-01`, name: 'Año Nuevo' },
+                { date: `${yr}-01-06`, name: 'Reyes' },
+                { date: `${yr}-05-01`, name: 'Día del Trabajo' },
+                { date: `${yr}-05-30`, name: 'Día de Canarias' },
+                { date: `${yr}-08-15`, name: 'Asunción' },
+                { date: `${yr}-10-12`, name: 'Fiesta Nacional' },
+                { date: `${yr}-11-01`, name: 'Todos los Santos' },
+                { date: `${yr}-12-06`, name: 'Constitución' },
+                { date: `${yr}-12-08`, name: 'Inmaculada' },
+                { date: `${yr}-12-25`, name: 'Navidad' },
+              ]);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/40 text-[11px] font-semibold text-rose-200"
+          >
+            + Festivos España/Canarias
+          </button>
+        </div>
+
+        <p className="text-[11px] text-slate-400">
+          En los días marcados como festivos, los turnos de servicio serán siempre{' '}
+          <strong className="text-emerald-300">AD</strong> o{' '}
+          <strong className="text-violet-300">AN</strong>.
+        </p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!holidayDate) return;
+            void upsertHolidayEntries([{ date: holidayDate, name: holidayName }]);
+            setHolidayDate('');
+            setHolidayName('');
+          }}
+          className="grid grid-cols-5 gap-2"
+        >
+          <input
+            type="date"
+            value={holidayDate}
+            onChange={(e) => setHolidayDate(e.target.value)}
+            className="col-span-2 px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white"
+          />
+          <input
+            type="text"
+            value={holidayName}
+            onChange={(e) => setHolidayName(e.target.value)}
+            placeholder="Nombre (opcional)"
+            className="col-span-2 px-2.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white"
+          />
+          <button
+            type="submit"
+            className="col-span-1 flex items-center justify-center rounded-xl bg-rose-500 text-white text-xs font-bold"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </form>
+
+        {holidays.length > 0 && (
+          <div className="max-h-40 overflow-y-auto space-y-1.5 pt-1">
+            {[...holidays]
+              .sort((a, b) => a.date.localeCompare(b.date))
+              .map((h) => (
+                <div
+                  key={h.date}
+                  className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/70 border border-slate-800 text-xs"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-mono text-rose-300">{h.date}</span>
+                    {h.name && <span className="text-slate-300 truncate">{h.name}</span>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void deleteHolidayEntry(h.date)}
+                    className="p-1 text-slate-400 hover:text-rose-400"
+                    aria-label="Eliminar festivo"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
       </section>
 
       {/* API Key de Visión */}

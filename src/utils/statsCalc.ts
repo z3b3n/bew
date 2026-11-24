@@ -67,7 +67,7 @@ export function computeUserStats(params: {
   let workingDays = 0;
   let freeDays = 0;
   let holidaysWorked = 0;
-  let holidaysFree = 0;
+  const workedHolidayDates = new Set<string>();
 
   for (const entry of filtered) {
     const def = SHIFT_DEFINITIONS[entry.shift];
@@ -86,12 +86,17 @@ export function computeUserStats(params: {
       }
       if (isHoliday) {
         holidaysWorked++;
+        workedHolidayDates.add(entry.date);
       }
-    } else {
+    } else if (entry.shift === 'L') {
       freeDays++;
-      if (isHoliday || entry.shift === 'F') {
-        holidaysFree++;
-      }
+    }
+  }
+
+  let holidaysFree = 0;
+  for (const hDate of holidaySet) {
+    if (monthSet.has(hDate.slice(0, 7)) && !workedHolidayDates.has(hDate)) {
+      holidaysFree++;
     }
   }
 
