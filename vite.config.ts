@@ -10,7 +10,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: [
-        'icons/bew-owl.svg',
+        'icons/bew-emblem.png',
         'icons/apple-touch-icon.png',
         'icons/icon-192.png',
         'icons/icon-512.png',
@@ -44,12 +44,6 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
-          },
-          {
-            src: '/icons/bew-owl.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any',
           },
         ],
       },
