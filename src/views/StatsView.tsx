@@ -133,15 +133,17 @@ export const StatsView: React.FC = () => {
       </div>
 
       {/* KPI Principal: Total Horas + Diurnas/Nocturnas */}
-      <div className="tactical-card rounded-2xl p-3.5 space-y-3">
+      <div className="rounded-3xl p-4 border border-amber-400/30 bg-gradient-to-br from-amber-500/15 via-slate-900/90 to-indigo-500/15 shadow-xl space-y-3">
         <div className="flex items-baseline justify-between">
           <div>
-            <div className="text-xs text-slate-400">Total horas trabajadas</div>
-            <div className="text-3xl font-extrabold text-white mt-0.5">{stats.totalHours}h</div>
+            <div className="text-xs text-slate-300">Total horas trabajadas</div>
+            <div className="text-3xl font-black text-white mt-0.5 tabular-nums">
+              {stats.totalHours}h
+            </div>
           </div>
-          <div className="text-right text-xs text-slate-400">
+          <div className="text-right text-xs text-slate-300 tabular-nums">
             <div>{stats.workingDays} turnos</div>
-            <div>{stats.freeDays} libres registrados</div>
+            <div className="text-slate-400">{stats.freeDays} libres</div>
           </div>
         </div>
 

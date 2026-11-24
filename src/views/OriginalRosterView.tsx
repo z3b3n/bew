@@ -4,6 +4,7 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  FileText,
   Image as ImageIcon,
   Loader2,
   Maximize2,
@@ -236,27 +237,51 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         <input
           ref={archiveOnlyInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf,.pdf,.csv,.txt"
           onChange={(e) => void handleArchiveOnly(e)}
           className="hidden"
         />
 
         {previewUrl && roster ? (
           <div className="space-y-2">
-            <div
-              onClick={() => setZoomOpen(true)}
-              className="relative rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950 max-h-64 cursor-pointer group"
-            >
-              <img
-                src={previewUrl}
-                alt={`Cuadrante ${monthKey}`}
-                className="w-full h-56 object-contain"
-              />
-              <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/75 text-xs font-semibold text-white border border-slate-700">
-                <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
-                <span>Ampliar con zoom</span>
+            {roster.mimeType.startsWith('image/') ? (
+              <div
+                onClick={() => setZoomOpen(true)}
+                className="relative rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950 max-h-64 cursor-pointer group"
+              >
+                <img
+                  src={previewUrl}
+                  alt={`Cuadrante ${monthKey}`}
+                  className="w-full h-56 object-contain"
+                />
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/75 text-xs font-semibold text-white border border-slate-700">
+                  <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Ampliar con zoom</span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white truncate">{roster.fileName}</div>
+                    <div className="text-[11px] text-slate-400">
+                      Documento guardado offline ({roster.mimeType || 'archivo'})
+                    </div>
+                  </div>
+                </div>
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-amber-300 shrink-0"
+                >
+                  Abrir
+                </a>
+              </div>
+            )}
 
             <div className="flex items-center justify-between text-[11px] text-slate-400">
               <span className="truncate">{roster.fileName}</span>
@@ -319,7 +344,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         <input
           ref={galleryInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf,.pdf,.csv,.txt"
           onChange={(e) => void handleScanFile(e)}
           className="hidden"
         />

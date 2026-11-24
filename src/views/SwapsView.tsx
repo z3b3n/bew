@@ -32,12 +32,26 @@ export const SwapsView: React.FC<SwapsViewProps> = ({ onNewSwap }) => {
   const pendingDebts = swaps.filter((s) => s.type === 'debt' && !s.settled);
   const historySwaps = swaps.filter((s) => s.type === 'exchange' || s.settled);
 
+  const totalOwedToMe = balances.reduce((acc, b) => acc + (b.net > 0 ? b.net : 0), 0);
+  const totalIOwe = balances.reduce((acc, b) => acc + (b.net < 0 ? Math.abs(b.net) : 0), 0);
+
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="tactical-card rounded-2xl p-3 border-emerald-500/30">
+          <div className="text-[11px] text-emerald-300 font-semibold">Servicios a favor</div>
+          <div className="text-2xl font-black text-white mt-0.5 tabular-nums">+{totalOwedToMe}</div>
+        </div>
+        <div className="tactical-card rounded-2xl p-3 border-rose-500/30">
+          <div className="text-[11px] text-rose-300 font-semibold">Servicios que debes</div>
+          <div className="text-2xl font-black text-white mt-0.5 tabular-nums">-{totalIOwe}</div>
+        </div>
+      </div>
+
       <button
         type="button"
         onClick={onNewSwap}
-        className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-amber-500 text-[#0B0F17] text-xs font-bold shadow-lg shadow-amber-500/20 active:scale-[0.99]"
+        className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 text-[#070B12] text-xs font-extrabold shadow-lg shadow-amber-500/20 active:scale-[0.99]"
       >
         <Plus className="w-4 h-4 stroke-[2.5]" />
         <span>Registrar cambio o servicio</span>
