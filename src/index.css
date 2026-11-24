@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --bg-base: #0b0f17;
+  --bg-surface: #131a26;
+  --bg-elevated: #1b2434;
+  --border-subtle: rgba(148, 163, 184, 0.14);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background-color: var(--bg-base);
+  color: #f1f5f9;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter',
+    system-ui, sans-serif;
+}
+
+/* Safe area helpers for iPhone 16 Pro / Dynamic Island */
+.pt-safe {
+  padding-top: max(12px, var(--safe-top));
+}
+
+.pb-safe {
+  padding-bottom: max(10px, var(--safe-bottom));
+}
+
+.pb-nav-safe {
+  padding-bottom: calc(76px + var(--safe-bottom));
+}
+
+/* Subtle custom scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.tactical-card {
+  background: linear-gradient(180deg, rgba(27, 36, 52, 0.72) 0%, rgba(19, 26, 38, 0.92) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.55);
+}
+
+.glass-bar {
+  background: rgba(11, 15, 23, 0.84);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}

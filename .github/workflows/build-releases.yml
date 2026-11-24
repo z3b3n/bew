@@ -1,0 +1,179 @@
+name: Build BEW Releases (iOS IPA & Android APK)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    name: Build BEW-iOS.ipa (unsigned)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies & build web bundle
+        run: |
+          npm ci
+          npm run build
+          npx cap sync ios
+
+      - name: Select latest Xcode
+        run: |
+          XCODE_APP=$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1)
+          echo "Using Xcode: $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Resolve App Version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            APP_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            APP_VERSION="1.0.0"
+          fi
+          echo "APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Build BEW iOS (unsigned)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios \
+            MARKETING_VERSION="$APP_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Package BEW-iOS.ipa
+        run: |
+          mkdir -p build/ipa/Payload
+          cp -R build/ios/Build/Products/Release-iphoneos/*.app build/ipa/Payload/
+          (cd build/ipa && zip -r -y ../../BEW-iOS.ipa Payload)
+          ls -lh BEW-iOS.ipa
+
+      - name: Upload BEW-iOS.ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BEW-iOS
+          path: BEW-iOS.ipa
+          if-no-files-found: error
+
+  build-android:
+    name: Build BEW-Android.apk (signed)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies & build web bundle
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Build release APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Sign and align BEW-Android.apk
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          echo "Using build-tools: $BUILD_TOOLS"
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/bew-release.jks" \
+            -alias bew \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass bewpass123 -keypass bewpass123 \
+            -dname "CN=BEW, OU=Mobile, O=ZETO, L=ES, C=ES"
+
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          "$BUILD_TOOLS/zipalign" -v -p 4 "$UNSIGNED_APK" "$RUNNER_TEMP/aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$RUNNER_TEMP/bew-release.jks" \
+            --ks-key-alias bew \
+            --ks-pass pass:bewpass123 \
+            --key-pass pass:bewpass123 \
+            --out BEW-Android.apk \
+            "$RUNNER_TEMP/aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify --verbose BEW-Android.apk
+          ls -lh BEW-Android.apk
+
+      - name: Upload BEW-Android.apk artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BEW-Android
+          path: BEW-Android.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-ios, build-android]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -lh BEW-iOS.ipa BEW-Android.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "BEW ${{ github.ref_name }}"
+          generate_release_notes: true
+          body: |
+            ## BEW ${{ github.ref_name }} — Cuadrante de Turnos Offline
+
+            ### Descargas
+            - **`BEW-iOS.ipa`** — Paquete iOS (sin firmar, instalable en iPhone 16 Pro mediante AltStore, SideStore o Sideloadly).
+            - **`BEW-Android.apk`** — Paquete Android firmado, listo para instalar directamente.
+
+            ### Novedades de esta primera versión
+            - Calendario con selector rápido **Solo ZETO** / **Todos** (Matriz y Tarjetas).
+            - Turnos predefinidos (`M`, `T`, `N`, `AN`, `AD`, `L/F`) con cálculo automático de horas diurnas y nocturnas.
+            - Apartado **Cuadrante Original** con archivo visual offline (zoom) y escaneo IA con **Diff** inteligente.
+            - Gestión de **Cambios / Deudas** con balance neto por compañero.
+            - Exportación a **Calendario iOS (`.ics`)** compatible con turnos nocturnos.
+            - Estadísticas por Mes, Trimestre y Año + Backup completo en JSON.
+          files: |
+            BEW-iOS.ipa
+            BEW-Android.apk

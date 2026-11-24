@@ -1,0 +1,20 @@
+node_modules
+dist
+.DS_Store
+*.local
+
+# Xcode / CocoaPods generated artifacts
+ios/App/Pods
+ios/App/build
+ios/DerivedData
+*.ipa
+
+# Android / Gradle generated artifacts
+android/.gradle
+android/app/build
+android/build
+android/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore

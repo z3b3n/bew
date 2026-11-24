@@ -1,0 +1,212 @@
+import React from 'react';
+import { ArrowLeftRight, Sparkles, Trash2, Users, X } from 'lucide-react';
+import { SHIFT_DEFINITIONS, SHIFT_ORDER } from '../constants/shifts';
+import { useApp } from '../context/AppContext';
+import type { ShiftCode } from '../types';
+import { formatShortDateEs } from '../utils/dateUtils';
+
+interface DayDetailSheetProps {
+  date: string;
+  targetUserId: string;
+  onClose: () => void;
+  onOpenSwap: (date: string, currentShift?: ShiftCode) => void;
+}
+
+export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
+  date,
+  targetUserId,
+  onClose,
+  onOpenSwap,
+}) => {
+  const { users, primaryUser, shiftMap, holidaySet, upsertShift, toggleHoliday } = useApp();
+
+  const targetUser = users.find((u) => u.id === targetUserId) ?? primaryUser;
+  const currentEntry = shiftMap.get(`${targetUser.id}_${date}`);
+  const currentShift = currentEntry?.shift;
+  const isHoliday = holidaySet.has(date);
+
+  const teammatesWorking = users
+    .filter((u) => u.id !== targetUser.id)
+    .map((u) => ({
+      user: u,
+      entry: shiftMap.get(`${u.id}_${date}`),
+    }))
+    .sort((a, b) => {
+      const aMatch = a.entry?.shift && a.entry.shift === currentShift ? 0 : 1;
+      const bMatch = b.entry?.shift && b.entry.shift === currentShift ? 0 : 1;
+      return aMatch - bMatch;
+    });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-end justify-center"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xl bg-[#111827] border-t border-slate-700/80 rounded-t-3xl p-4 pb-safe max-h-[88dvh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="w-10 h-1 rounded-full bg-slate-700 mx-auto mb-3" />
+
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold text-white capitalize">
+                {formatShortDateEs(date)}
+              </h3>
+              {isHoliday && (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                  Festivo
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Editando turno de{' '}
+              <span className="font-semibold" style={{ color: targetUser.color }}>
+                {targetUser.name}
+              </span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-full bg-slate-800/80 text-slate-300 hover:bg-slate-700"
+            aria-label="Cerrar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Selector rápido de turnos */}
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {SHIFT_ORDER.map((code) => {
+            const def = SHIFT_DEFINITIONS[code];
+            const selected = currentShift === code;
+            return (
+              <button
+                key={code}
+                type="button"
+                onClick={() => void upsertShift(targetUser.id, date, code)}
+                className={`p-2.5 rounded-2xl border text-left transition-all ${
+                  selected
+                    ? `${def.badgeBg} ${def.badgeBorder} ring-2 ring-amber-400/70`
+                    : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-sm font-bold ${def.badgeText}`}>{code}</span>
+                  <span className="text-[10px] text-slate-400">{def.totalHours}h</span>
+                </div>
+                <div className="text-[11px] text-slate-300 truncate mt-0.5">{def.shortLabel}</div>
+                {def.startTime && (
+                  <div className="text-[10px] text-slate-500">
+                    {def.startTime}–{def.endTime}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => void upsertShift(targetUser.id, date, null)}
+            className="p-2.5 rounded-2xl border border-slate-800 bg-slate-900/50 hover:border-rose-500/40 text-left flex flex-col justify-between"
+          >
+            <div className="flex items-center justify-between text-slate-400">
+              <Trash2 className="w-4 h-4" />
+            </div>
+            <div className="text-[11px] text-slate-400 font-medium">Limpiar</div>
+          </button>
+        </div>
+
+        {/* Switch Festivo + Botón Cambio */}
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <button
+            type="button"
+            onClick={() => void toggleHoliday(date)}
+            className={`flex-1 min-w-[160px] flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-colors ${
+              isHoliday
+                ? 'bg-rose-500/20 border-rose-500/50 text-rose-200'
+                : 'bg-slate-800/70 border-slate-700 text-slate-300'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            {isHoliday ? 'Día marcado como Festivo' : 'Marcar día como Festivo'}
+          </button>
+
+          {targetUser.id === primaryUser.id && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenSwap(date, currentShift);
+              }}
+              className="flex-1 min-w-[160px] flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-amber-500 text-[#0B0F17] text-xs font-bold shadow-lg shadow-amber-500/20"
+            >
+              <ArrowLeftRight className="w-4 h-4" />
+              Gestionar cambio
+            </button>
+          )}
+        </div>
+
+        {/* Compañeros ese día */}
+        <div className="border-t border-slate-800 pt-3.5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 mb-2.5">
+            <Users className="w-4 h-4 text-sky-400" />
+            <span>Compañeros este día</span>
+          </div>
+
+          {teammatesWorking.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              Añade compañeros en Ajustes o escanea un cuadrante para ver coincidencias.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {teammatesWorking.map(({ user, entry }) => {
+                const def = entry ? SHIFT_DEFINITIONS[entry.shift] : null;
+                const coincides =
+                  Boolean(currentShift) &&
+                  Boolean(entry?.shift) &&
+                  entry?.shift === currentShift &&
+                  SHIFT_DEFINITIONS[currentShift!].isWorking;
+
+                return (
+                  <div
+                    key={user.id}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl border ${
+                      coincides
+                        ? 'bg-amber-500/10 border-amber-500/35'
+                        : 'bg-slate-900/60 border-slate-800/80'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ backgroundColor: user.color }}
+                      />
+                      <span className="text-xs font-medium text-slate-200">{user.name}</span>
+                      {coincides && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold">
+                          Coincide
+                        </span>
+                      )}
+                    </div>
+                    {def ? (
+                      <span
+                        className={`text-xs font-bold px-2 py-0.5 rounded-lg border ${def.badgeBg} ${def.badgeText} ${def.badgeBorder}`}
+                      >
+                        {def.code} · {def.shortLabel}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-500">Sin asignar</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
