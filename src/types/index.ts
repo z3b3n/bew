@@ -40,6 +40,8 @@ export interface RosterImage {
   fileName: string;
   uploadedAt: number;
   extraPages?: RosterPageItem[];
+  originalPdfBlob?: Blob;
+  originalPdfName?: string;
 }
 
 export type SwapType = 'exchange' | 'debt';

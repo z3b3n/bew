@@ -6,7 +6,8 @@ import { isPdfBlob } from '../utils/pdfHelper';
 import { matchScannedUser, type ScannedRosterResult, type ScannedUserRow } from '../utils/rosterDiff';
 
 const MAX_DIMENSION = 3072;
-const SCAN_TIMEOUT_MS = 55000;
+const PER_ATTEMPT_TIMEOUT_MS = 24000;
+const TOTAL_SCAN_TIMEOUT_MS = 95000;
 
 export interface ScanRosterOutput extends ScannedRosterResult {
   resolvedModel?: string;
@@ -47,6 +48,18 @@ function buildCalendarAnchor(monthKey: string): string {
   return parts.join(', ');
 }
 
+function buildWeekendAnchors(monthKey: string): string {
+  const days = getDaysInMonth(monthKey);
+  const weekends: string[] = [];
+  for (let d = 1; d <= days; d++) {
+    const wd = getWeekdayShort(`${monthKey}-${pad2(d)}`);
+    if (wd === 'Sáb' || wd === 'Dom') {
+      weekends.push(`${d}(${wd})`);
+    }
+  }
+  return weekends.join(', ');
+}
+
 function buildVisionPrompt(options: {
   monthKey: string;
   users: User[];
@@ -58,6 +71,7 @@ function buildVisionPrompt(options: {
   const { monthKey, users, primaryUser, scanScope, fileCount, extractedPdfText } = options;
   const totalDays = getDaysInMonth(monthKey);
   const calendarAnchor = buildCalendarAnchor(monthKey);
+  const weekendAnchors = buildWeekendAnchors(monthKey);
 
   const teamHints = users
     .map((u) => (u.alias ? `${u.name} (alias: ${u.alias})` : u.name))
@@ -97,7 +111,10 @@ Códigos de turno válidos en la salida (usa EXACTAMENTE estos códigos):
 
 Instrucciones:
 1. ${scopeInstruction}${multiPageInstruction}
-2. IMPORTANTE EN CUADRANTES COMINT: Las celdas vacías/blancas en la fila de un trabajador significan Día Libre ('L'), igual que 'C', 'AP', 'OTRO', 'A/C' o franjas rojas de vacaciones/baja. Incluye TODOS los días del 1 al ${totalDays} para cada trabajador.
+2. REGLA CRÍTICA ANTI-DESPLAZAMIENTO DE COLUMNAS:
+   - En los cuadrantes COMINT, las celdas BLANCAS / VACÍAS son días libres ("L"). ¡CUENTA CADA CELDA VACÍA INDIVIDUALMENTE! Nunca saltes una celda blanca ni desplaces los turnos siguientes hacia la izquierda.
+   - Usa las columnas de FIN DE SEMANA (sombreadas en AMARILLO verticalmente en toda la tabla) como puntos de control exactos: en "${monthKey}" los fines de semana son EXACTAMENTE los días ${weekendAnchors}. Comprueba que el turno sobre cada franja amarilla vertical coincide con esos números de día, y que la última columna de la derecha sea el día ${totalDays}.
+   - Los códigos 'C', 'AP', 'OTRO', 'A/C' o franjas rojas de vacaciones/baja también son 'L'. Incluye TODOS los días del 1 al ${totalDays} para cada trabajador.
 3. Para cada usuario, devuelve "compactShifts" como una cadena compacta con los pares día:código separados por comas (ejemplo: "1:L,2:AD,3:AN,4:M"). Verifica columna por columna alineando día numérico y día de la semana.
 4. Si la cabecera del cuadrante indica otro mes/año distinto a "${monthKey}", indícalo en "detectedMonthKey" con formato "YYYY-MM"; si coincide o no se ve el año, pon "${monthKey}".
 5. Si la cabecera marca días festivos destacados en rojo/festivo, incluye sus números de día en "holidays".
@@ -242,9 +259,9 @@ function parseJsonResponse(rawText: string, fallbackMonthKey: string): ScannedRo
 }
 
 const DEFAULT_GEMINI_FALLBACK_MODELS = [
+  'gemini-2.5-flash-lite',
   'gemini-2.5-flash',
   'gemini-2.0-flash',
-  'gemini-2.5-flash-lite',
   'gemini-2.0-flash-lite',
   'gemini-2.5-pro',
 ];
@@ -425,7 +442,7 @@ export async function scanRosterFiles(
   const timeoutId = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, SCAN_TIMEOUT_MS);
+  }, TOTAL_SCAN_TIMEOUT_MS);
 
   const onExternalAbort = () => controller.abort();
   if (signal) {
@@ -487,17 +504,51 @@ export async function scanRosterFiles(
 
       for (let idx = 0; idx < candidates.length; idx++) {
         const candidate = candidates[idx];
-        let res = await callGeminiParts(candidate, apiKey, parts, controller.signal, {
-          useSchema: true,
-          useThinkingCap: true,
-        });
+        const attemptController = new AbortController();
+        let attemptTimedOut = false;
+        const attemptTimer = setTimeout(() => {
+          attemptTimedOut = true;
+          attemptController.abort();
+        }, PER_ATTEMPT_TIMEOUT_MS);
+        const forwardGlobalAbort = () => attemptController.abort();
+        controller.signal.addEventListener('abort', forwardGlobalAbort, { once: true });
 
-        if (res.status === 400) {
-          res = await callGeminiParts(candidate, apiKey, parts, controller.signal, {
-            useSchema: false,
-            useThinkingCap: false,
+        let res: Response;
+        try {
+          res = await callGeminiParts(candidate, apiKey, parts, attemptController.signal, {
+            useSchema: true,
+            useThinkingCap: true,
           });
+
+          if (res.status === 400) {
+            res = await callGeminiParts(candidate, apiKey, parts, attemptController.signal, {
+              useSchema: false,
+              useThinkingCap: false,
+            });
+          }
+        } catch (attemptErr) {
+          clearTimeout(attemptTimer);
+          controller.signal.removeEventListener('abort', forwardGlobalAbort);
+
+          // Si se colgó este modelo concreto (24s) pero el escaneo global sigue activo, saltamos al siguiente
+          if (
+            attemptTimedOut &&
+            !controller.signal.aborted &&
+            idx < candidates.length - 1
+          ) {
+            const nextCandidate = candidates[idx + 1];
+            lastErrMsg = `Modelo ${candidate} tardó demasiado en responder.`;
+            onProgress?.(
+              `${candidate} no responde (24s), saltando a ${nextCandidate}...`,
+              60
+            );
+            continue;
+          }
+          throw attemptErr;
         }
+
+        clearTimeout(attemptTimer);
+        controller.signal.removeEventListener('abort', forwardGlobalAbort);
 
         if (res.ok) {
           onProgress?.('Calculando diferencias y validando días...', 85);
@@ -656,7 +707,7 @@ export async function scanRosterFiles(
     if (err instanceof DOMException && err.name === 'AbortError') {
       if (timedOut) {
         throw new Error(
-          'Tiempo de espera agotado (55s). Prueba eligiendo "Solo ZETO" o revisa tu conexión.'
+          'Tiempo de espera agotado (95s). Prueba con "⚡ Leer PDF directo" o revisa tu conexión.'
         );
       }
       throw new Error('Escaneo cancelado por el usuario.');

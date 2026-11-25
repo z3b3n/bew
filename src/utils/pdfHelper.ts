@@ -87,6 +87,87 @@ function splitMultiTokens(item: PositionedToken): Array<{ text: string; xCenter:
   return res;
 }
 
+interface DayColumn {
+  day: number;
+  xCenter: number;
+  leftBound: number;
+  rightBound: number;
+}
+
+function buildInterpolatedColumns(
+  headerCandidates: Array<{ day: number; xCenter: number }>,
+  maxDays: number
+): { cols: DayColumn[]; medianStep: number; firstDayX: number } {
+  const sorted = [...headerCandidates].sort((a, b) => a.xCenter - b.xCenter);
+  const perDaySteps: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const dayDiff = sorted[i].day - sorted[i - 1].day;
+    const xDiff = sorted[i].xCenter - sorted[i - 1].xCenter;
+    if (dayDiff > 0 && xDiff > 4) {
+      perDaySteps.push(xDiff / dayDiff);
+    }
+  }
+  perDaySteps.sort((a, b) => a - b);
+  const medianStep =
+    perDaySteps.length > 0 ? perDaySteps[Math.floor(perDaySteps.length / 2)] : 18;
+
+  const byDay = new Map<number, number>();
+  for (const c of sorted) {
+    byDay.set(c.day, c.xCenter);
+  }
+
+  const minDetected = sorted[0].day;
+  const maxDetected = sorted[sorted.length - 1].day;
+  const startDay = minDetected <= 2 ? 1 : minDetected;
+  const endDay = maxDetected >= maxDays - 1 ? maxDays : maxDetected;
+
+  const complete: Array<{ day: number; xCenter: number }> = [];
+  for (let d = startDay; d <= endDay; d++) {
+    const exact = byDay.get(d);
+    if (exact !== undefined) {
+      complete.push({ day: d, xCenter: exact });
+      continue;
+    }
+    // Interpolar desde el día conocido más cercano
+    let nearestDay = sorted[0].day;
+    let nearestX = sorted[0].xCenter;
+    let minDiff = Infinity;
+    for (const c of sorted) {
+      const diff = Math.abs(c.day - d);
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearestDay = c.day;
+        nearestX = c.xCenter;
+      }
+    }
+    complete.push({
+      day: d,
+      xCenter: nearestX + (d - nearestDay) * medianStep,
+    });
+  }
+
+  const cols: DayColumn[] = complete.map((c, idx) => {
+    const leftBound =
+      idx === 0 ? c.xCenter - medianStep * 0.55 : (complete[idx - 1].xCenter + c.xCenter) / 2;
+    const rightBound =
+      idx === complete.length - 1
+        ? c.xCenter + medianStep * 0.55
+        : (c.xCenter + complete[idx + 1].xCenter) / 2;
+    return {
+      day: c.day,
+      xCenter: c.xCenter,
+      leftBound,
+      rightBound,
+    };
+  });
+
+  return {
+    cols,
+    medianStep,
+    firstDayX: cols[0]?.xCenter ?? sorted[0].xCenter,
+  };
+}
+
 function parseStructuredPdfTable(
   pagesTokens: PositionedToken[][],
   monthKey: string
@@ -113,7 +194,7 @@ function parseStructuredPdfTable(
       r.items.sort((a, b) => a.x - b.x);
     }
 
-    let currentCols: Array<{ day: number; xCenter: number }> = [];
+    let currentCols: DayColumn[] = [];
     let colStep = 18;
     let firstDayX = 0;
 
@@ -136,19 +217,10 @@ function parseStructuredPdfTable(
       }
 
       if (headerCandidates.length >= 7) {
-        headerCandidates.sort((a, b) => a.xCenter - b.xCenter);
-        currentCols = headerCandidates;
-        firstDayX = currentCols[0].xCenter;
-        let stepSum = 0;
-        let stepCount = 0;
-        for (let i = 1; i < currentCols.length; i++) {
-          const diff = currentCols[i].xCenter - currentCols[i - 1].xCenter;
-          if (diff > 4) {
-            stepSum += diff;
-            stepCount++;
-          }
-        }
-        colStep = stepCount > 0 ? stepSum / stepCount : 18;
+        const built = buildInterpolatedColumns(headerCandidates, maxDays);
+        currentCols = built.cols;
+        colStep = built.medianStep;
+        firstDayX = built.firstDayX;
         continue;
       }
 
@@ -167,18 +239,12 @@ function parseStructuredPdfTable(
           const normalized = normalizePdfShiftCode(tok.text);
           if (!normalized) continue;
 
-          // Buscar la columna más cercana
-          let bestCol: { day: number; xCenter: number } | null = null;
-          let bestDist = Infinity;
-          for (const col of currentCols) {
-            const dist = Math.abs(tok.xCenter - col.xCenter);
-            if (dist < bestDist) {
-              bestDist = dist;
-              bestCol = col;
-            }
-          }
-          if (bestCol && bestDist <= colStep * 0.85) {
-            shiftMapForRow[bestCol.day] = normalized;
+          // Asignar al rango exacto [leftBound, rightBound] de su columna
+          const targetCol = currentCols.find(
+            (col) => tok.xCenter >= col.leftBound && tok.xCenter <= col.rightBound
+          );
+          if (targetCol) {
+            shiftMapForRow[targetCol.day] = normalized;
             recognizedCount++;
           }
         }
@@ -223,6 +289,19 @@ function parseStructuredPdfTable(
   };
 }
 
+function buildExplicitPdfText(localParsed: ScannedRosterResult): string {
+  return localParsed.rows
+    .map((row) => {
+      const pairs = Object.keys(row.shifts)
+        .map(Number)
+        .sort((a, b) => a - b)
+        .map((d) => `${d}=${row.shifts[d]}`)
+        .join(', ');
+      return `${row.rawName}: ${pairs}`;
+    })
+    .join('\n');
+}
+
 export async function convertPdfToImagesAndText(
   blob: Blob,
   monthKey = '',
@@ -243,17 +322,17 @@ export async function convertPdfToImagesAndText(
 
     const totalPages = Math.min(pdf.numPages, maxPages);
     const pageFiles: File[] = [];
-    const textPages: string[] = [];
     const pagesTokens: PositionedToken[][] = [];
 
     for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
 
-      // 1. Extraer texto con coordenadas X/Y
+      // 1. Extraer texto con coordenadas X/Y sin combinar celdas separadas por huecos
       try {
-        const textContent = await page.getTextContent();
+        const textContent = await page.getTextContent({
+          disableCombineTextItems: true,
+        } as Parameters<typeof page.getTextContent>[0]);
         const pageTokens: PositionedToken[] = [];
-        const rows: Array<{ y: number; items: Array<{ x: number; str: string }> }> = [];
 
         for (const rawItem of textContent.items as TextItemLike[]) {
           const str = (rawItem.str ?? '').trim();
@@ -264,26 +343,9 @@ export async function convertPdfToImagesAndText(
           const y = rawItem.transform[5];
           const width = rawItem.width ?? str.length * 6;
           pageTokens.push({ str, x, y, width });
-
-          const existingRow = rows.find((r) => Math.abs(r.y - y) <= 4.5);
-          if (existingRow) {
-            existingRow.items.push({ x, str });
-          } else {
-            rows.push({ y, items: [{ x, str }] });
-          }
         }
 
         pagesTokens.push(pageTokens);
-        rows.sort((a, b) => b.y - a.y);
-        const lines = rows.map((r) => {
-          r.items.sort((a, b) => a.x - b.x);
-          return r.items.map((it) => it.str).join(' ');
-        });
-
-        const pageText = lines.join('\n').trim();
-        if (pageText) {
-          textPages.push(`--- Página ${pageNum} ---\n${pageText}`);
-        }
       } catch {
         // Si falla la extracción de texto en una página, seguimos con la imagen
       }
@@ -304,7 +366,7 @@ export async function convertPdfToImagesAndText(
         }).promise;
 
         const imgBlob = await new Promise<Blob | null>((resolve) =>
-          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9)
+          canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.92)
         );
         if (imgBlob) {
           pageFiles.push(new File([imgBlob], `pagina-${pageNum}.jpg`, { type: 'image/jpeg' }));
@@ -313,10 +375,12 @@ export async function convertPdfToImagesAndText(
     }
 
     const localParsed = monthKey ? parseStructuredPdfTable(pagesTokens, monthKey) : null;
+    // Solo enviamos texto estructurado explícito si se alinearon las columnas; nunca texto con huecos colapsados
+    const extractedText = localParsed ? buildExplicitPdfText(localParsed) : '';
 
     return {
       pageFiles,
-      extractedText: textPages.join('\n\n'),
+      extractedText,
       localParsed,
     };
   } catch {

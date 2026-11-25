@@ -183,7 +183,7 @@ export async function processRosterImage(
   }
 
   const mimeType = 'image/jpeg';
-  const dataUrl = outCanvas.toDataURL(mimeType, 0.9);
+  const dataUrl = outCanvas.toDataURL(mimeType, 0.93);
   const commaIdx = dataUrl.indexOf(',');
   const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
 
@@ -194,7 +194,7 @@ export async function processRosterImage(
         else reject(new Error('No se pudo exportar la imagen procesada.'));
       },
       mimeType,
-      0.9
+      0.93
     );
   });
 

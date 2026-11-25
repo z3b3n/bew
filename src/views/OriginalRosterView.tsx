@@ -58,6 +58,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
   const [prepFiles, setPrepFiles] = useState<File[] | null>(null);
   const [pendingPdfText, setPendingPdfText] = useState<string | undefined>(undefined);
   const [pendingLocalParsed, setPendingLocalParsed] = useState<ScannedRosterResult | null>(null);
+  const [pendingOriginalPdf, setPendingOriginalPdf] = useState<File | null>(null);
   const [preparingPdf, setPreparingPdf] = useState(false);
   const [rescanScope, setRescanScope] = useState<'all' | 'primary_only'>('primary_only');
   const [scanProgress, setScanProgress] = useState<{ stage: string; pct: number } | null>(null);
@@ -136,7 +137,10 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
 
-  const saveRosterFiles = async (files: File[]): Promise<RosterImage> => {
+  const saveRosterFiles = async (
+    files: File[],
+    originalPdfFile?: File | null
+  ): Promise<RosterImage> => {
     const [mainFile, ...restFiles] = files;
     const record: RosterImage = {
       monthKey,
@@ -144,6 +148,12 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
       mimeType: mainFile.type || 'image/jpeg',
       fileName: mainFile.name || `cuadrante-${monthKey}.jpg`,
       uploadedAt: Date.now(),
+      ...(originalPdfFile
+        ? {
+            originalPdfBlob: originalPdfFile,
+            originalPdfName: originalPdfFile.name || `cuadrante-${monthKey}.pdf`,
+          }
+        : {}),
       ...(restFiles.length > 0
         ? {
             extraPages: restFiles.map((f, idx) => ({
@@ -185,15 +195,18 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     setErrorMsg(null);
     setPendingPdfText(undefined);
     setPendingLocalParsed(null);
+    setPendingOriginalPdf(null);
 
     const processedArr: File[] = [];
     const collectedTexts: string[] = [];
     let mergedLocalParsed: ScannedRosterResult | null = null;
+    let firstPdfFile: File | null = null;
     let hasPdf = false;
 
     for (const f of arr) {
       if (await isPdfBlob(f, f.name)) {
         hasPdf = true;
+        if (!firstPdfFile) firstPdfFile = f;
       }
     }
 
@@ -239,6 +252,9 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     if (mergedLocalParsed) {
       setPendingLocalParsed(mergedLocalParsed);
     }
+    if (firstPdfFile) {
+      setPendingOriginalPdf(firstPdfFile);
+    }
     setPrepFiles(processedArr);
   };
 
@@ -266,11 +282,12 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
 
   const runDirectPdfParseOnSaved = async (scope: 'all' | 'primary_only') => {
     if (!roster) return;
+    const pdfSource = roster.originalPdfBlob ?? roster.blob;
     setErrorMsg(null);
     setStatusMsg(null);
     setPreparingPdf(true);
     try {
-      const { localParsed } = await convertPdfToImagesAndText(roster.blob, monthKey);
+      const { localParsed } = await convertPdfToImagesAndText(pdfSource, monthKey);
       if (!localParsed || localParsed.rows.length === 0) {
         setErrorMsg(
           'No se pudo detectar la tabla automáticamente en este PDF. Prueba con "Escanear archivo guardado" (IA).'
@@ -326,6 +343,17 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         effectiveBlobs = preparedBlobs;
         if (!effectivePdfText && pdfTexts.length > 0) {
           effectivePdfText = pdfTexts.join('\n\n');
+        }
+      } else if (roster?.originalPdfBlob && (!effectivePdfText || !effectiveLocalFallback)) {
+        const { extractedText, localParsed } = await convertPdfToImagesAndText(
+          roster.originalPdfBlob,
+          monthKey
+        );
+        if (!effectivePdfText && extractedText.trim()) {
+          effectivePdfText = extractedText;
+        }
+        if (!effectiveLocalFallback && localParsed && localParsed.rows.length > 0) {
+          effectiveLocalFallback = localParsed;
         }
       }
 
@@ -698,7 +726,8 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
                 </div>
               </div>
 
-              {(roster.mimeType === 'application/pdf' ||
+              {(Boolean(roster.originalPdfBlob) ||
+                roster.mimeType === 'application/pdf' ||
                 roster.fileName.toLowerCase().endsWith('.pdf')) && (
                 <button
                   type="button"
@@ -773,21 +802,24 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
             setPrepFiles(null);
             setPendingPdfText(undefined);
             setPendingLocalParsed(null);
+            setPendingOriginalPdf(null);
           }}
           onArchiveOnly={async (processed) => {
-            await saveRosterFiles(processed);
+            await saveRosterFiles(processed, pendingOriginalPdf);
             setPrepFiles(null);
             setPendingPdfText(undefined);
             setPendingLocalParsed(null);
+            setPendingOriginalPdf(null);
             setStatusMsg('Cuadrante guardado offline en tu dispositivo.');
             setTimeout(() => setStatusMsg(null), 3500);
           }}
           onUseLocalParsed={async (processed, scope) => {
             const localRes = pendingLocalParsed;
-            await saveRosterFiles(processed);
+            await saveRosterFiles(processed, pendingOriginalPdf);
             setPrepFiles(null);
             setPendingPdfText(undefined);
             setPendingLocalParsed(null);
+            setPendingOriginalPdf(null);
             if (localRes) {
               setScannedResult(applyLocalScope(localRes, scope));
             }
@@ -795,10 +827,11 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
           onScanWithAi={async (processed, scope) => {
             const pdfText = pendingPdfText;
             const localRes = pendingLocalParsed;
-            await saveRosterFiles(processed);
+            await saveRosterFiles(processed, pendingOriginalPdf);
             setPrepFiles(null);
             setPendingPdfText(undefined);
             setPendingLocalParsed(null);
+            setPendingOriginalPdf(null);
             await runScanOnBlobs(processed, scope, pdfText, localRes);
           }}
         />
