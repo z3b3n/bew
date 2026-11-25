@@ -33,7 +33,7 @@ module BewStorage {
             return Graphics.COLOR_ORANGE;
         }
         if (code.equals("PO") || code.equals("AP")) {
-            return Graphics.COLOR_TEAL;
+            return 0x00AAAA;
         }
         return Graphics.COLOR_LT_GRAY;
     }
