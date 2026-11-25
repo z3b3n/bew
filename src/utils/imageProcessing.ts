@@ -12,8 +12,47 @@ export interface NormalizedCrop {
 
 export const FULL_CROP: NormalizedCrop = { x: 0, y: 0, w: 1, h: 1 };
 
+export function isNativeApp(): boolean {
+  return Capacitor.isNativePlatform();
+}
+
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|heif|bmp|gif)$/i;
+
+export function isLikelyImageFile(blob: Blob, fileName?: string): boolean {
+  if (blob.type.startsWith('image/')) return true;
+  if (fileName && IMAGE_EXT_RE.test(fileName)) return true;
+  return false;
+}
+
 /**
- * Captura una foto o selecciona de galería usando la cámara nativa en iOS/Android (Capacitor).
+ * Clona los bytes de los archivos seleccionados en memoria RAM antes de limpiar el <input>,
+ * evitando que iOS/Safari libere el archivo temporal a mitad de lectura.
+ */
+export async function materializeFiles(fileList: FileList | File[]): Promise<File[]> {
+  const arr = Array.from(fileList);
+  const result: File[] = [];
+  for (const f of arr) {
+    const buffer = await f.arrayBuffer();
+    const mimeType =
+      f.type || (isLikelyImageFile(f, f.name) ? 'image/jpeg' : 'application/octet-stream');
+    result.push(new File([buffer], f.name || `archivo-${Date.now()}`, { type: mimeType }));
+  }
+  return result;
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const clean = base64.includes(',') ? base64.split(',')[1] : base64;
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Captura una foto o selecciona de Fototeca usando la cámara nativa en iOS/Android (Capacitor)
+ * devolviendo los bytes directos (Base64) para evitar fallos con rutas temporales o HEIC/iCloud.
  * En web/PWA devuelve null para usar el selector de archivos estándar.
  */
 export async function captureWithNativeCamera(source: 'camera' | 'photos'): Promise<File | null> {
@@ -23,20 +62,30 @@ export async function captureWithNativeCamera(source: 'camera' | 'photos'): Prom
 
   try {
     const photo = await Camera.getPhoto({
-      quality: 95,
+      quality: 92,
       allowEditing: false,
-      resultType: CameraResultType.Uri,
+      resultType: CameraResultType.Base64,
       source: source === 'camera' ? CameraSource.Camera : CameraSource.Photos,
       correctOrientation: true,
     });
 
-    if (!photo.webPath) return null;
-    const response = await fetch(photo.webPath);
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    const ext = photo.format || 'jpeg';
-    const mimeType = blob.type || `image/${ext}`;
-    return new File([blob], `cuadrante-${Date.now()}.${ext}`, { type: mimeType });
+    if (photo.base64String) {
+      const bytes = base64ToUint8Array(photo.base64String);
+      const ext = photo.format || 'jpeg';
+      const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+      return new File([bytes], `cuadrante-${Date.now()}.${ext}`, { type: mimeType });
+    }
+
+    if (photo.webPath) {
+      const response = await fetch(photo.webPath);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      const ext = photo.format || 'jpeg';
+      const mimeType = blob.type || `image/${ext}`;
+      return new File([blob], `cuadrante-${Date.now()}.${ext}`, { type: mimeType });
+    }
+
+    return null;
   } catch (err) {
     const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
     // Si el usuario cancela el diálogo nativo, no propagamos error

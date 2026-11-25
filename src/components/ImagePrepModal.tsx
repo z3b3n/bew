@@ -17,6 +17,9 @@ import {
 import {
   FULL_CROP,
   captureWithNativeCamera,
+  isLikelyImageFile,
+  isNativeApp,
+  materializeFiles,
   processRosterImage,
   type NormalizedCrop,
   type RotationAngle,
@@ -47,7 +50,7 @@ interface ImagePrepModalProps {
 type DragHandle = 'nw' | 'ne' | 'sw' | 'se' | 'move';
 
 function buildPrepItem(file: File): PrepItem {
-  const isImage = file.type.startsWith('image/');
+  const isImage = isLikelyImageFile(file, file.name);
   return {
     id: `prep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     file,
@@ -75,8 +78,7 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
   const [busy, setBusy] = useState(false);
 
   const stageRef = useRef<HTMLDivElement>(null);
-  const addCameraRef = useRef<HTMLInputElement>(null);
-  const addGalleryRef = useRef<HTMLInputElement>(null);
+  const nativeApp = isNativeApp();
 
   const dragRef = useRef<{
     handle: DragHandle;
@@ -118,13 +120,22 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
     });
   };
 
-  const handleAddCamera = async () => {
-    const nativeFile = await captureWithNativeCamera('camera');
+  const handleAddNative = async (source: 'camera' | 'photos') => {
+    const nativeFile = await captureWithNativeCamera(source);
     if (nativeFile) {
       appendFiles([nativeFile]);
-      return;
     }
-    addCameraRef.current?.click();
+  };
+
+  const handlePrepInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const rawList = input.files ? Array.from(input.files) : [];
+    if (rawList.length === 0) return;
+    void materializeFiles(rawList)
+      .then((safeFiles) => appendFiles(safeFiles))
+      .finally(() => {
+        input.value = '';
+      });
   };
 
   const handleRemoveItem = (idx: number) => {
@@ -312,47 +323,59 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
         ))}
 
         <input
-          ref={addCameraRef}
+          id="bew-prep-cam-input"
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={(e) => {
-            const list = e.target.files ? Array.from(e.target.files) : [];
-            e.target.value = '';
-            appendFiles(list);
-          }}
-          className="hidden"
+          onChange={handlePrepInputChange}
+          className="sr-only"
         />
         <input
-          ref={addGalleryRef}
+          id="bew-prep-gal-input"
           type="file"
           accept="image/*,application/pdf,.pdf,.csv,.txt"
           multiple
-          onChange={(e) => {
-            const list = e.target.files ? Array.from(e.target.files) : [];
-            e.target.value = '';
-            appendFiles(list);
-          }}
-          className="hidden"
+          onChange={handlePrepInputChange}
+          className="sr-only"
         />
 
-        <button
-          type="button"
-          onClick={() => void handleAddCamera()}
-          className="shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 border border-dashed border-slate-700 text-[11px] font-semibold text-amber-300"
-        >
-          <Camera className="w-3.5 h-3.5" />
-          <span>+ Foto</span>
-        </button>
+        {nativeApp ? (
+          <button
+            type="button"
+            onClick={() => void handleAddNative('camera')}
+            className="shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 border border-dashed border-slate-700 text-[11px] font-semibold text-amber-300"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>+ Foto</span>
+          </button>
+        ) : (
+          <label
+            htmlFor="bew-prep-cam-input"
+            className="shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 border border-dashed border-slate-700 text-[11px] font-semibold text-amber-300 cursor-pointer"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>+ Foto</span>
+          </label>
+        )}
 
-        <button
-          type="button"
-          onClick={() => addGalleryRef.current?.click()}
-          className="shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 border border-dashed border-slate-700 text-[11px] font-semibold text-sky-300"
-        >
-          <ImagePlus className="w-3.5 h-3.5" />
-          <span>+ Archivo</span>
-        </button>
+        {nativeApp ? (
+          <button
+            type="button"
+            onClick={() => void handleAddNative('photos')}
+            className="shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 border border-dashed border-slate-700 text-[11px] font-semibold text-sky-300"
+          >
+            <ImagePlus className="w-3.5 h-3.5" />
+            <span>+ Galería</span>
+          </button>
+        ) : (
+          <label
+            htmlFor="bew-prep-gal-input"
+            className="shrink-0 flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-900 border border-dashed border-slate-700 text-[11px] font-semibold text-sky-300 cursor-pointer"
+          >
+            <ImagePlus className="w-3.5 h-3.5" />
+            <span>+ Archivo</span>
+          </label>
+        )}
       </div>
 
       {/* Área de edición visual */}

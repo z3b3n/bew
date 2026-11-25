@@ -21,7 +21,12 @@ import { getRosterImage, putRosterImage, removeRosterImage } from '../db/indexed
 import { scanRosterFiles } from '../services/visionScanner';
 import type { RosterImage, ShiftEntry } from '../types';
 import { formatMonthTitle, pad2, shiftMonthKey } from '../utils/dateUtils';
-import { captureWithNativeCamera, readImageFromClipboard } from '../utils/imageProcessing';
+import {
+  captureWithNativeCamera,
+  isNativeApp,
+  materializeFiles,
+  readImageFromClipboard,
+} from '../utils/imageProcessing';
 import { convertPdfToImagesAndText, isPdfBlob } from '../utils/pdfHelper';
 import { matchScannedUser, type ScannedRosterResult } from '../utils/rosterDiff';
 import { DiffReviewModal, type DiffApplyPayload } from '../components/DiffReviewModal';
@@ -68,9 +73,8 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
   const [dragOver, setDragOver] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
   const scanAbortRef = useRef<AbortController | null>(null);
+  const nativeApp = isNativeApp();
 
   const buildUrlsForRoster = (found: RosterImage | null): ZoomImageItem[] => {
     if (!found) return [];
@@ -174,18 +178,33 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     return record;
   };
 
-  const handleOpenCamera = async () => {
+  const handleNativeCapture = async (source: 'camera' | 'photos') => {
     setErrorMsg(null);
     try {
-      const nativeFile = await captureWithNativeCamera('camera');
+      const nativeFile = await captureWithNativeCamera(source);
       if (nativeFile) {
-        setPrepFiles([nativeFile]);
-        return;
+        await handleFilesSelected([nativeFile]);
       }
-      cameraInputRef.current?.click();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'No se pudo abrir la cámara.');
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : source === 'camera'
+            ? 'No se pudo abrir la cámara.'
+            : 'No se pudo abrir la Fototeca.'
+      );
     }
+  };
+
+  const handleInputFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const rawList = input.files ? Array.from(input.files) : [];
+    if (rawList.length === 0) return;
+    void materializeFiles(rawList)
+      .then((safeFiles) => handleFilesSelected(safeFiles))
+      .finally(() => {
+        input.value = '';
+      });
   };
 
   const handleFilesSelected = async (files: FileList | File[] | null) => {
@@ -535,48 +554,78 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         )}
 
         <input
-          ref={cameraInputRef}
+          id="bew-cam-input"
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={(e) => {
-            void handleFilesSelected(e.target.files);
-            e.target.value = '';
-          }}
-          className="hidden"
+          onChange={handleInputFileChange}
+          className="sr-only"
         />
         <input
-          ref={galleryInputRef}
+          id="bew-gal-input"
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handleInputFileChange}
+          className="sr-only"
+        />
+        <input
+          id="bew-doc-input"
           type="file"
           accept="image/*,application/pdf,.pdf,.csv,.txt"
           multiple
-          onChange={(e) => {
-            void handleFilesSelected(e.target.files);
-            e.target.value = '';
-          }}
-          className="hidden"
+          onChange={handleInputFileChange}
+          className="sr-only"
         />
 
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={Boolean(scanProgress)}
-            onClick={() => void handleOpenCamera()}
-            className="flex items-center justify-center gap-2 py-3 px-3 rounded-2xl bg-amber-500 text-[#0B0F17] text-xs font-extrabold shadow-lg shadow-amber-500/20 disabled:opacity-50 active:scale-98"
-          >
-            <Camera className="w-4 h-4" />
-            <span>Hacer Foto</span>
-          </button>
+        <div className="grid grid-cols-3 gap-2">
+          {nativeApp ? (
+            <button
+              type="button"
+              disabled={Boolean(scanProgress)}
+              onClick={() => void handleNativeCapture('camera')}
+              className="flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-2xl bg-amber-500 text-[#0B0F17] text-xs font-extrabold shadow-lg shadow-amber-500/20 disabled:opacity-50 active:scale-95"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Cámara</span>
+            </button>
+          ) : (
+            <label
+              htmlFor="bew-cam-input"
+              className="flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-2xl bg-amber-500 text-[#0B0F17] text-xs font-extrabold shadow-lg shadow-amber-500/20 cursor-pointer active:scale-95"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Cámara</span>
+            </label>
+          )}
 
-          <button
-            type="button"
-            disabled={Boolean(scanProgress)}
-            onClick={() => galleryInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 py-3 px-3 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs font-bold disabled:opacity-50 active:scale-98"
+          {nativeApp ? (
+            <button
+              type="button"
+              disabled={Boolean(scanProgress)}
+              onClick={() => void handleNativeCapture('photos')}
+              className="flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs font-bold disabled:opacity-50 active:scale-95"
+            >
+              <ImageIcon className="w-4 h-4 text-emerald-400" />
+              <span>Galería</span>
+            </button>
+          ) : (
+            <label
+              htmlFor="bew-gal-input"
+              className="flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs font-bold cursor-pointer active:scale-95"
+            >
+              <ImageIcon className="w-4 h-4 text-emerald-400" />
+              <span>Galería</span>
+            </label>
+          )}
+
+          <label
+            htmlFor="bew-doc-input"
+            className="flex flex-col items-center justify-center gap-1 py-3 px-2 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs font-bold cursor-pointer active:scale-95"
           >
             <Upload className="w-4 h-4 text-sky-400" />
-            <span>Subir Fotos / PDF</span>
-          </button>
+            <span>PDF / Archivo</span>
+          </label>
         </div>
 
         <p className="text-[10px] text-slate-500 text-center">
