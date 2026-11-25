@@ -33,7 +33,7 @@ class BewSummaryView extends WatchUi.View {
 
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(cx, 132, Graphics.FONT_XTINY, "M: " + summary.get("M").toString() + "   T: " + summary.get("T").toString() + "   N: " + summary.get("N").toString(), Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(cx, 158, Graphics.FONT_XTINY, "AD: " + summary.get("AD").toString() + "   AN: " + summary.get("AN").toString(), Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(cx, 158, Graphics.FONT_XTINY, "AD: " + summary.get("AD").toString() + "   AN: " + summary.get("AN").toString() + "   VN: " + summary.get("VN").toString(), Graphics.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
         dc.drawText(cx, 212, Graphics.FONT_XTINY, "BACK para volver", Graphics.TEXT_JUSTIFY_CENTER);

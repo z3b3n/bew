@@ -1,6 +1,6 @@
-export type ShiftCode = 'M' | 'T' | 'N' | 'AN' | 'AD' | 'L' | 'F';
+export type ShiftCode = 'M' | 'T' | 'N' | 'AN' | 'VN' | 'AD' | 'PO' | 'AP' | 'C' | 'L' | 'F';
 
-export type WorkingShiftCode = 'M' | 'T' | 'N' | 'AN' | 'AD';
+export type WorkingShiftCode = 'M' | 'T' | 'N' | 'AN' | 'VN' | 'AD';
 
 export interface User {
   id: string;

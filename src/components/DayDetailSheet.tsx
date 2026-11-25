@@ -12,7 +12,7 @@ interface DayDetailSheetProps {
   onOpenSwap: (date: string, currentShift?: ShiftCode) => void;
 }
 
-const HOLIDAY_SHIFT_ORDER: ShiftCode[] = ['AD', 'AN', 'L'];
+const HOLIDAY_SHIFT_ORDER: ShiftCode[] = ['AD', 'AN', 'VN', 'PO', 'AP', 'C', 'L', 'F'];
 
 export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({
   date,

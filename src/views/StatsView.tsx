@@ -189,6 +189,28 @@ export const StatsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Permisos y Cursos (C / PO / AP) */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="tactical-card rounded-2xl px-3 py-2.5 border-orange-500/25">
+          <div className="text-[10px] text-orange-300 font-semibold">Curso (C)</div>
+          <div className="text-lg font-extrabold text-white mt-0.5 tabular-nums">
+            {stats.absenceCounts.C}
+          </div>
+        </div>
+        <div className="tactical-card rounded-2xl px-3 py-2.5 border-teal-500/25">
+          <div className="text-[10px] text-teal-300 font-semibold">P. Oficial (PO)</div>
+          <div className="text-lg font-extrabold text-white mt-0.5 tabular-nums">
+            {stats.absenceCounts.PO}
+          </div>
+        </div>
+        <div className="tactical-card rounded-2xl px-3 py-2.5 border-cyan-500/25">
+          <div className="text-[10px] text-cyan-300 font-semibold">As. Propios (AP)</div>
+          <div className="text-lg font-extrabold text-white mt-0.5 tabular-nums">
+            {stats.absenceCounts.AP}
+          </div>
+        </div>
+      </div>
+
       {/* Conteo exacto + Donut */}
       <div className="tactical-card rounded-2xl p-3.5">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">

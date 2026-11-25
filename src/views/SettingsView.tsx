@@ -453,7 +453,7 @@ export const SettingsView: React.FC = () => {
           >
             Franja 22:00–06:00
             <span className="block text-[10px] font-normal opacity-80 mt-0.5">
-              N: 3h día / 8h noche · AN: 4h / 8h
+              N: 3h día / 8h noche · AN/VN: 4h / 8h
             </span>
           </button>
           <button
@@ -467,7 +467,7 @@ export const SettingsView: React.FC = () => {
           >
             Turno completo
             <span className="block text-[10px] font-normal opacity-80 mt-0.5">
-              N: 11h noche · AN: 12h noche
+              N: 11h noche · AN/VN: 12h noche
             </span>
           </button>
         </div>

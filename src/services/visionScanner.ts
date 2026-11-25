@@ -105,8 +105,12 @@ Códigos de turno válidos en la salida (usa EXACTAMENTE estos códigos):
 - "T": Tarde (15:00-21:00)
 - "N": Noche (21:00-08:00)
 - "AN": Arco Nocturno (20:00-08:00). Si pone "ADN" o "AN", devuélvelo como "AN".
+- "VN": Viernes Noche (20:00-08:00, 12h). Si pone "VN" o "V.N.", devuélvelo como "VN".
 - "AD": Arco Diurno (08:00-20:00). Si pone "ADD" o "AD", devuélvelo como "AD".
-- "L": Día Libre / Descanso. Si pone "C", "AP", "PD", "OTRO", "D", "DL", "LIBRE", "V", "VAC", "B", "X", "-" o está vacío como descanso, devuélvelo como "L".
+- "PO": Permiso Oficial (si pone "PO" o "P.O.").
+- "AP": Asuntos Propios (si pone "AP", "A.P." o "A/P").
+- "C": Curso (si pone "C" o "CURSO").
+- "L": Día Libre / Descanso. Si pone "PD", "OTRO", "A/C", "D", "DL", "LIBRE", "V", "VAC", "B", "BAJA", "X", "-" o es una celda blanca/vacía, devuélvelo como "L".
 - "F": Festivo libre (si pone "F" o "FEST").
 
 Instrucciones:
@@ -114,7 +118,7 @@ Instrucciones:
 2. REGLA CRÍTICA ANTI-DESPLAZAMIENTO DE COLUMNAS:
    - En los cuadrantes COMINT, las celdas BLANCAS / VACÍAS son días libres ("L"). ¡CUENTA CADA CELDA VACÍA INDIVIDUALMENTE! Nunca saltes una celda blanca ni desplaces los turnos siguientes hacia la izquierda.
    - Usa las columnas de FIN DE SEMANA (sombreadas en AMARILLO verticalmente en toda la tabla) como puntos de control exactos: en "${monthKey}" los fines de semana son EXACTAMENTE los días ${weekendAnchors}. Comprueba que el turno sobre cada franja amarilla vertical coincide con esos números de día, y que la última columna de la derecha sea el día ${totalDays}.
-   - Los códigos 'C', 'AP', 'OTRO', 'A/C' o franjas rojas de vacaciones/baja también son 'L'. Incluye TODOS los días del 1 al ${totalDays} para cada trabajador.
+   - Los códigos 'PD', 'OTRO', 'A/C' o franjas rojas de vacaciones/baja son 'L', pero respeta 'C' (Curso), 'PO' (Permiso Oficial), 'AP' (Asuntos Propios) y 'VN' (Viernes Noche) tal cual. Incluye TODOS los días del 1 al ${totalDays} para cada trabajador.
 3. Para cada usuario, devuelve "compactShifts" como una cadena compacta con los pares día:código separados por comas (ejemplo: "1:L,2:AD,3:AN,4:M"). Verifica columna por columna alineando día numérico y día de la semana.
 4. Si la cabecera del cuadrante indica otro mes/año distinto a "${monthKey}", indícalo en "detectedMonthKey" con formato "YYYY-MM"; si coincide o no se ve el año, pon "${monthKey}".
 5. Si la cabecera marca días festivos destacados en rojo/festivo, incluye sus números de día en "holidays".
@@ -137,10 +141,12 @@ export function normalizeScannedCode(raw: string): ShiftCode | null {
   if (isShiftCode(code)) return code;
   if (code === 'ADD') return 'AD';
   if (code === 'ADN') return 'AN';
+  if (code === 'V.N' || code === 'V.N.') return 'VN';
+  if (code === 'P.O' || code === 'P.O.' || code === 'PERMISO OFICIAL') return 'PO';
+  if (code === 'A.P' || code === 'A.P.' || code === 'A/P') return 'AP';
+  if (code === 'CURSO') return 'C';
   if (code === 'FEST' || code === 'FESTIVO') return 'F';
   if (
-    code === 'C' ||
-    code === 'AP' ||
     code === 'PD' ||
     code === 'OTRO' ||
     code === 'A/C' ||

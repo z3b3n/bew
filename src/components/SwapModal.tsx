@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeftRight, X } from 'lucide-react';
-import { SHIFT_ORDER } from '../constants/shifts';
+import { WORKING_SHIFTS } from '../constants/shifts';
 import { useApp } from '../context/AppContext';
 import type { DebtDirection, ShiftCode, SwapType } from '../types';
 import { getTodayStr } from '../utils/dateUtils';
@@ -177,7 +177,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
                       onChange={(e) => setShiftGiven(e.target.value as ShiftCode)}
                       className="w-full px-2 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
                     >
-                      {SHIFT_ORDER.filter((c) => c !== 'L' && c !== 'F').map((c) => (
+                      {WORKING_SHIFTS.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -205,7 +205,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
                       onChange={(e) => setShiftCovered(e.target.value as ShiftCode)}
                       className="w-full px-2 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
                     >
-                      {SHIFT_ORDER.filter((c) => c !== 'L' && c !== 'F').map((c) => (
+                      {WORKING_SHIFTS.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -264,7 +264,7 @@ export const SwapModal: React.FC<SwapModalProps> = ({
                       onChange={(e) => setDebtShift(e.target.value as ShiftCode)}
                       className="w-full px-2 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
                     >
-                      {SHIFT_ORDER.filter((c) => c !== 'L' && c !== 'F').map((c) => (
+                      {WORKING_SHIFTS.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>

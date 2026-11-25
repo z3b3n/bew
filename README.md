@@ -18,7 +18,9 @@ Disponible en tres formatos:
 | **T** | Tarde | `15:00 – 21:00` | 6h | 6h / 0h |
 | **N** | Noche | `21:00 – 08:00` (+1 día) | 11h | 3h / 8h *(configurable a 11h nocturnas)* |
 | **AN** | Arco Nocturno | `20:00 – 08:00` (+1 día) | 12h | 4h / 8h *(configurable a 12h nocturnas)* |
+| **VN** | Viernes Noche | `20:00 – 08:00` (+1 día) | 12h | 4h / 8h *(configurable a 12h nocturnas)* |
 | **AD** | Arco Diurno | `08:00 – 20:00` | 12h | 12h / 0h |
+| **C / PO / AP** | Curso / Permiso Oficial / Asuntos Propios | — | 0h | 0h / 0h |
 | **L / F** | Libre / Festivo | — | 0h | 0h / 0h |
 
 ### 2. Selector Rápido `Solo ZETO` / `Todos`

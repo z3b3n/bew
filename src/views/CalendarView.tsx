@@ -645,6 +645,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   </span>
                 );
               })}
+              {(['C', 'PO', 'AP'] as ShiftCode[]).map((code) => {
+                const d = SHIFT_DEFINITIONS[code];
+                return (
+                  <span key={code} className="flex items-center gap-1">
+                    <span className={`w-2 h-2 rounded-full ${d.dotColor}`} />
+                    <strong className={d.badgeText}>{code}</strong>
+                  </span>
+                );
+              })}
               <span className="flex items-center gap-1 text-fuchsia-300 font-semibold">
                 <ArrowLeftRight className="w-3 h-3" /> Cambio
               </span>

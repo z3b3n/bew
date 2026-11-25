@@ -36,10 +36,12 @@ function normalizePdfShiftCode(raw: string): ShiftCode | null {
   if (isShiftCode(code)) return code;
   if (code === 'ADD') return 'AD';
   if (code === 'ADN') return 'AN';
+  if (code === 'V.N' || code === 'V.N.') return 'VN';
+  if (code === 'P.O' || code === 'P.O.' || code === 'PERMISO OFICIAL') return 'PO';
+  if (code === 'A.P' || code === 'A.P.' || code === 'A/P') return 'AP';
+  if (code === 'CURSO') return 'C';
   if (code === 'FEST' || code === 'FESTIVO') return 'F';
   if (
-    code === 'C' ||
-    code === 'AP' ||
     code === 'PD' ||
     code === 'OTRO' ||
     code === 'A/C' ||

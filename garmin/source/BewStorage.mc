@@ -5,7 +5,7 @@ using Toybox.Time.Gregorian;
 
 (:glance)
 module BewStorage {
-    var SHIFT_CYCLE = ["", "M", "T", "N", "AD", "AN", "L"];
+    var SHIFT_CYCLE = ["", "M", "T", "N", "AD", "AN", "VN", "C", "PO", "AP", "L"];
 
     function getShiftColor(code) {
         if (code == null || code.equals("")) {
@@ -25,6 +25,15 @@ module BewStorage {
         }
         if (code.equals("AN")) {
             return Graphics.COLOR_PINK;
+        }
+        if (code.equals("VN")) {
+            return Graphics.COLOR_BLUE;
+        }
+        if (code.equals("C")) {
+            return Graphics.COLOR_ORANGE;
+        }
+        if (code.equals("PO") || code.equals("AP")) {
+            return Graphics.COLOR_TEAL;
         }
         return Graphics.COLOR_LT_GRAY;
     }
@@ -48,6 +57,18 @@ module BewStorage {
         if (code.equals("AN")) {
             return "Arco Nocturno";
         }
+        if (code.equals("VN")) {
+            return "Viernes Noche";
+        }
+        if (code.equals("C")) {
+            return "Curso";
+        }
+        if (code.equals("PO")) {
+            return "Perm. Oficial";
+        }
+        if (code.equals("AP")) {
+            return "Asuntos Prop.";
+        }
         if (code.equals("L")) {
             return "Libre";
         }
@@ -70,8 +91,11 @@ module BewStorage {
         if (code.equals("AD")) {
             return "08:00 - 20:00 (12h)";
         }
-        if (code.equals("AN")) {
+        if (code.equals("AN") || code.equals("VN")) {
             return "20:00 - 08:00 (12h)";
+        }
+        if (code.equals("C") || code.equals("PO") || code.equals("AP")) {
+            return getShiftLabel(code) + " (0h)";
         }
         if (code.equals("L")) {
             return "Dia Libre (0h)";
@@ -92,7 +116,7 @@ module BewStorage {
         if (code.equals("N")) {
             return 11;
         }
-        if (code.equals("AD") || code.equals("AN")) {
+        if (code.equals("AD") || code.equals("AN") || code.equals("VN")) {
             return 12;
         }
         return 0;
@@ -173,6 +197,7 @@ module BewStorage {
         var countN = 0;
         var countAD = 0;
         var countAN = 0;
+        var countVN = 0;
 
         var prefix = year.toString() + "-" + pad2(month) + "-";
         for (var d = 1; d <= 31; d++) {
@@ -192,6 +217,9 @@ module BewStorage {
             } else if (code.equals("AN")) {
                 countAN++;
                 totalHours += 12;
+            } else if (code.equals("VN")) {
+                countVN++;
+                totalHours += 12;
             }
         }
 
@@ -201,7 +229,8 @@ module BewStorage {
             "T" => countT,
             "N" => countN,
             "AD" => countAD,
-            "AN" => countAN
+            "AN" => countAN,
+            "VN" => countVN
         };
     }
 
@@ -224,7 +253,7 @@ module BewStorage {
                 var token = rest.substring(start, i);
                 if (day <= 31) {
                     var key = monthKey + "-" + pad2(day);
-                    if (token.equals("M") || token.equals("T") || token.equals("N") || token.equals("AD") || token.equals("AN") || token.equals("L")) {
+                    if (token.equals("M") || token.equals("T") || token.equals("N") || token.equals("AD") || token.equals("AN") || token.equals("VN") || token.equals("C") || token.equals("PO") || token.equals("AP") || token.equals("L")) {
                         setShift(key, token);
                     }
                 }

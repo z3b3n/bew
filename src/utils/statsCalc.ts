@@ -21,6 +21,11 @@ export interface UserStatsResult {
   holidaysFree: number;
   shiftCounts: Record<WorkingShiftCode, number>;
   shiftHours: Record<WorkingShiftCode, number>;
+  absenceCounts: {
+    C: number;
+    PO: number;
+    AP: number;
+  };
   series: TimeSeriesPoint[];
 }
 
@@ -51,6 +56,7 @@ export function computeUserStats(params: {
     T: 0,
     N: 0,
     AN: 0,
+    VN: 0,
     AD: 0,
   };
   const shiftHours: Record<WorkingShiftCode, number> = {
@@ -58,7 +64,13 @@ export function computeUserStats(params: {
     T: 0,
     N: 0,
     AN: 0,
+    VN: 0,
     AD: 0,
+  };
+  const absenceCounts = {
+    C: 0,
+    PO: 0,
+    AP: 0,
   };
 
   let totalHours = 0;
@@ -88,8 +100,14 @@ export function computeUserStats(params: {
         holidaysWorked++;
         workedHolidayDates.add(entry.date);
       }
-    } else if (entry.shift === 'L') {
+    } else if (entry.shift === 'L' || entry.shift === 'F') {
       freeDays++;
+    } else if (entry.shift === 'C') {
+      absenceCounts.C++;
+    } else if (entry.shift === 'PO') {
+      absenceCounts.PO++;
+    } else if (entry.shift === 'AP') {
+      absenceCounts.AP++;
     }
   }
 
@@ -150,6 +168,7 @@ export function computeUserStats(params: {
     holidaysFree,
     shiftCounts,
     shiftHours,
+    absenceCounts,
     series,
   };
 }

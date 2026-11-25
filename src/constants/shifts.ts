@@ -102,6 +102,26 @@ export const SHIFT_DEFINITIONS: Record<ShiftCode, ShiftDefinition> = {
     dotColor: 'bg-violet-400',
     hex: '#A78BFA',
   },
+  VN: {
+    code: 'VN',
+    label: 'Viernes Noche',
+    shortLabel: 'Vie. Noche',
+    startTime: '20:00',
+    endTime: '08:00',
+    crossesMidnight: true,
+    totalHours: 12,
+    dayHoursStatutory: 4,
+    nightHoursStatutory: 8,
+    isWorking: true,
+    badgeBg: 'bg-blue-500/25',
+    badgeText: 'text-blue-200',
+    badgeBorder: 'border-blue-400/55',
+    cellBg: 'bg-gradient-to-b from-blue-500/35 via-blue-600/20 to-blue-800/15',
+    cellBorder: 'border-blue-400/55',
+    heroGradient: 'from-blue-500/30 via-blue-700/15 to-slate-900/90 border-blue-400/45',
+    dotColor: 'bg-blue-400',
+    hex: '#60A5FA',
+  },
   AD: {
     code: 'AD',
     label: 'Arco Diurno',
@@ -121,6 +141,66 @@ export const SHIFT_DEFINITIONS: Record<ShiftCode, ShiftDefinition> = {
     heroGradient: 'from-emerald-500/25 via-emerald-600/10 to-slate-900/90 border-emerald-400/40',
     dotColor: 'bg-emerald-400',
     hex: '#34D399',
+  },
+  PO: {
+    code: 'PO',
+    label: 'Permiso Oficial',
+    shortLabel: 'P. Oficial',
+    startTime: null,
+    endTime: null,
+    crossesMidnight: false,
+    totalHours: 0,
+    dayHoursStatutory: 0,
+    nightHoursStatutory: 0,
+    isWorking: false,
+    badgeBg: 'bg-teal-500/20',
+    badgeText: 'text-teal-200',
+    badgeBorder: 'border-teal-400/50',
+    cellBg: 'bg-gradient-to-b from-teal-500/28 to-teal-700/12',
+    cellBorder: 'border-teal-400/45',
+    heroGradient: 'from-teal-500/25 to-slate-900/90 border-teal-400/45',
+    dotColor: 'bg-teal-400',
+    hex: '#2DD4BF',
+  },
+  AP: {
+    code: 'AP',
+    label: 'Asuntos Propios',
+    shortLabel: 'As. Propios',
+    startTime: null,
+    endTime: null,
+    crossesMidnight: false,
+    totalHours: 0,
+    dayHoursStatutory: 0,
+    nightHoursStatutory: 0,
+    isWorking: false,
+    badgeBg: 'bg-cyan-500/20',
+    badgeText: 'text-cyan-200',
+    badgeBorder: 'border-cyan-400/50',
+    cellBg: 'bg-gradient-to-b from-cyan-500/28 to-cyan-700/12',
+    cellBorder: 'border-cyan-400/45',
+    heroGradient: 'from-cyan-500/25 to-slate-900/90 border-cyan-400/45',
+    dotColor: 'bg-cyan-400',
+    hex: '#22D3EE',
+  },
+  C: {
+    code: 'C',
+    label: 'Curso',
+    shortLabel: 'Curso',
+    startTime: null,
+    endTime: null,
+    crossesMidnight: false,
+    totalHours: 0,
+    dayHoursStatutory: 0,
+    nightHoursStatutory: 0,
+    isWorking: false,
+    badgeBg: 'bg-orange-500/20',
+    badgeText: 'text-orange-200',
+    badgeBorder: 'border-orange-400/50',
+    cellBg: 'bg-gradient-to-b from-orange-500/28 to-orange-700/12',
+    cellBorder: 'border-orange-400/45',
+    heroGradient: 'from-orange-500/25 to-slate-900/90 border-orange-400/45',
+    dotColor: 'bg-orange-400',
+    hex: '#FB923C',
   },
   L: {
     code: 'L',
@@ -164,8 +244,8 @@ export const SHIFT_DEFINITIONS: Record<ShiftCode, ShiftDefinition> = {
   },
 };
 
-export const SHIFT_ORDER: ShiftCode[] = ['M', 'T', 'N', 'AN', 'AD', 'L'];
-export const WORKING_SHIFTS: WorkingShiftCode[] = ['M', 'T', 'N', 'AN', 'AD'];
+export const SHIFT_ORDER: ShiftCode[] = ['M', 'T', 'N', 'AN', 'VN', 'AD', 'C', 'PO', 'AP', 'L'];
+export const WORKING_SHIFTS: WorkingShiftCode[] = ['M', 'T', 'N', 'AN', 'VN', 'AD'];
 
 export const USER_COLOR_PALETTE = [
   '#38BDF8', // Sky
@@ -186,7 +266,7 @@ export function getShiftHours(
   if (!def.isWorking) {
     return { total: 0, day: 0, night: 0 };
   }
-  if (nightHoursMode === 'full_shift' && (shift === 'N' || shift === 'AN')) {
+  if (nightHoursMode === 'full_shift' && (shift === 'N' || shift === 'AN' || shift === 'VN')) {
     return { total: def.totalHours, day: 0, night: def.totalHours };
   }
   return {
@@ -197,5 +277,17 @@ export function getShiftHours(
 }
 
 export function isShiftCode(val: string): val is ShiftCode {
-  return val === 'M' || val === 'T' || val === 'N' || val === 'AN' || val === 'AD' || val === 'L' || val === 'F';
+  return (
+    val === 'M' ||
+    val === 'T' ||
+    val === 'N' ||
+    val === 'AN' ||
+    val === 'VN' ||
+    val === 'AD' ||
+    val === 'PO' ||
+    val === 'AP' ||
+    val === 'C' ||
+    val === 'L' ||
+    val === 'F'
+  );
 }
