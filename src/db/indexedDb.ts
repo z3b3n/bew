@@ -237,12 +237,19 @@ export async function putSettings(settings: AppSettings): Promise<void> {
   await db.put('settings', { ...settings, id: 'app' });
 }
 
+interface SerializedRosterPage {
+  mimeType: string;
+  fileName: string;
+  base64: string;
+}
+
 interface SerializedRoster {
   monthKey: string;
   mimeType: string;
   fileName: string;
   uploadedAt: number;
   base64: string;
+  extraPages?: SerializedRosterPage[];
 }
 
 interface BackupPayload {
@@ -298,6 +305,17 @@ export async function exportBackupJson(includeImages: boolean): Promise<string> 
           fileName: r.fileName,
           uploadedAt: r.uploadedAt,
           base64: await blobToBase64(r.blob),
+          ...(r.extraPages && r.extraPages.length > 0
+            ? {
+                extraPages: await Promise.all(
+                  r.extraPages.map(async (p) => ({
+                    mimeType: p.mimeType,
+                    fileName: p.fileName,
+                    base64: await blobToBase64(p.blob),
+                  }))
+                ),
+              }
+            : {}),
         }))
       )
     : undefined;
@@ -375,6 +393,15 @@ export async function importBackupJson(jsonText: string): Promise<{
       fileName: r.fileName,
       uploadedAt: r.uploadedAt,
       blob: base64ToBlob(r.base64, r.mimeType),
+      ...(Array.isArray(r.extraPages) && r.extraPages.length > 0
+        ? {
+            extraPages: r.extraPages.map((p) => ({
+              mimeType: p.mimeType,
+              fileName: p.fileName,
+              blob: base64ToBlob(p.base64, p.mimeType),
+            })),
+          }
+        : {}),
     });
   }
 

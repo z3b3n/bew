@@ -46,6 +46,7 @@ export const App: React.FC = () => {
           monthKey={monthKey}
           onMonthChange={setMonthKey}
           onOpenSwap={(date, shift) => setSwapModalState({ open: true, date, shift })}
+          onGoToRoster={() => setActiveTab('roster')}
         />
       )}
 
@@ -55,6 +56,7 @@ export const App: React.FC = () => {
           monthKey={monthKey}
           onMonthChange={setMonthKey}
           onOpenSwap={(date, shift) => setSwapModalState({ open: true, date, shift })}
+          onGoToRoster={() => setActiveTab('roster')}
         />
       )}
 

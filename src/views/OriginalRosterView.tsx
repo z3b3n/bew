@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Camera,
   ChevronLeft,
   ChevronRight,
+  ClipboardPaste,
   FileText,
   Image as ImageIcon,
   Loader2,
@@ -11,16 +12,20 @@ import {
   ScanLine,
   Trash2,
   Upload,
+  User,
+  Users,
 } from 'lucide-react';
 import { USER_COLOR_PALETTE } from '../constants/shifts';
 import { useApp } from '../context/AppContext';
 import { getRosterImage, putRosterImage, removeRosterImage } from '../db/indexedDb';
-import { scanRosterImage } from '../services/visionScanner';
+import { scanRosterFiles } from '../services/visionScanner';
 import type { RosterImage, ShiftEntry } from '../types';
-import { formatMonthTitle, shiftMonthKey } from '../utils/dateUtils';
-import { buildRosterDiff, type RosterDiffReport } from '../utils/rosterDiff';
-import { DiffReviewModal } from '../components/DiffReviewModal';
-import { ImageZoomModal } from '../components/ImageZoomModal';
+import { formatMonthTitle, pad2, shiftMonthKey } from '../utils/dateUtils';
+import { captureWithNativeCamera, readImageFromClipboard } from '../utils/imageProcessing';
+import type { ScannedRosterResult } from '../utils/rosterDiff';
+import { DiffReviewModal, type DiffApplyPayload } from '../components/DiffReviewModal';
+import { ImagePrepModal } from '../components/ImagePrepModal';
+import { ImageZoomModal, type ZoomImageItem } from '../components/ImageZoomModal';
 
 interface OriginalRosterViewProps {
   monthKey: string;
@@ -35,118 +40,204 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
 }) => {
   const {
     users,
-    shiftMap,
+    primaryUser,
     settings,
     addUser,
+    updateUser,
     batchApplyShifts,
     setHolidaysBatch,
     updateSettings,
   } = useApp();
 
   const [roster, setRoster] = useState<RosterImage | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [pageUrls, setPageUrls] = useState<ZoomImageItem[]>([]);
+  const [activePageIdx, setActivePageIdx] = useState(0);
   const [zoomOpen, setZoomOpen] = useState(false);
-  const [scanning, setScanning] = useState(false);
+
+  const [prepFiles, setPrepFiles] = useState<File[] | null>(null);
+  const [rescanScope, setRescanScope] = useState<'all' | 'primary_only'>('all');
+  const [scanProgress, setScanProgress] = useState<{ stage: string; pct: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
-  const [diffReport, setDiffReport] = useState<RosterDiffReport | null>(null);
+  const [scannedResult, setScannedResult] = useState<ScannedRosterResult | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  const archiveOnlyInputRef = useRef<HTMLInputElement>(null);
+
+  const buildUrlsForRoster = (found: RosterImage | null): ZoomImageItem[] => {
+    if (!found) return [];
+    const urls: ZoomImageItem[] = [];
+    if (found.mimeType.startsWith('image/')) {
+      urls.push({ url: URL.createObjectURL(found.blob), label: found.fileName });
+    }
+    if (found.extraPages) {
+      for (const page of found.extraPages) {
+        if (page.mimeType.startsWith('image/')) {
+          urls.push({ url: URL.createObjectURL(page.blob), label: page.fileName });
+        }
+      }
+    }
+    return urls;
+  };
 
   useEffect(() => {
     let active = true;
-    let objectUrl: string | null = null;
+    let createdUrls: ZoomImageItem[] = [];
+
+    setConfirmDelete(false);
+    setActivePageIdx(0);
 
     void getRosterImage(monthKey).then((found) => {
       if (!active) return;
       if (found) {
         setRoster(found);
-        objectUrl = URL.createObjectURL(found.blob);
-        setPreviewUrl(objectUrl);
+        createdUrls = buildUrlsForRoster(found);
+        setPageUrls(createdUrls);
       } else {
         setRoster(null);
-        setPreviewUrl(null);
+        setPageUrls([]);
       }
     });
 
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      for (const item of createdUrls) {
+        URL.revokeObjectURL(item.url);
+      }
     };
   }, [monthKey]);
 
-  const saveRosterFile = async (file: File): Promise<RosterImage> => {
+  // Escucha Ctrl+V / Pegar imagen en la vista de Cuadrante
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const f = item.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        setErrorMsg(null);
+        setPrepFiles(files);
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  const saveRosterFiles = async (files: File[]): Promise<RosterImage> => {
+    const [mainFile, ...restFiles] = files;
     const record: RosterImage = {
       monthKey,
-      blob: file,
-      mimeType: file.type || 'image/jpeg',
-      fileName: file.name || `cuadrante-${monthKey}.jpg`,
+      blob: mainFile,
+      mimeType: mainFile.type || 'image/jpeg',
+      fileName: mainFile.name || `cuadrante-${monthKey}.jpg`,
       uploadedAt: Date.now(),
+      ...(restFiles.length > 0
+        ? {
+            extraPages: restFiles.map((f, idx) => ({
+              blob: f,
+              mimeType: f.type || 'image/jpeg',
+              fileName: f.name || `cuadrante-${monthKey}-p${idx + 2}.jpg`,
+            })),
+          }
+        : {}),
     };
     await putRosterImage(record);
     setRoster(record);
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
+    setPageUrls((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.url);
+      return buildUrlsForRoster(record);
     });
+    setActivePageIdx(0);
     return record;
   };
 
-  const handleArchiveOnly = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const handleOpenCamera = async () => {
     setErrorMsg(null);
-    await saveRosterFile(file);
-    setStatusMsg('Imagen del cuadrante guardada offline en IndexedDB.');
-    setTimeout(() => setStatusMsg(null), 3000);
-  };
-
-  const runScanOnBlob = async (blob: Blob) => {
-    setErrorMsg(null);
-    setStatusMsg(null);
-    setScanning(true);
     try {
-      const scanned = await scanRosterImage(blob, monthKey, settings);
-      if (scanned.resolvedModel && scanned.resolvedModel !== settings.model) {
-        await updateSettings({ ...settings, model: scanned.resolvedModel });
+      const nativeFile = await captureWithNativeCamera('camera');
+      if (nativeFile) {
+        setPrepFiles([nativeFile]);
+        return;
       }
-      const report = buildRosterDiff(scanned, users, shiftMap);
-      setDiffReport(report);
+      cameraInputRef.current?.click();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Error al escanear el cuadrante.');
-    } finally {
-      setScanning(false);
+      setErrorMsg(err instanceof Error ? err.message : 'No se pudo abrir la cámara.');
     }
   };
 
-  const handleScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    await saveRosterFile(file);
-    await runScanOnBlob(file);
+  const handleFilesSelected = (files: FileList | File[] | null) => {
+    if (!files) return;
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    setErrorMsg(null);
+    setPrepFiles(arr);
   };
 
-  const handleDeleteImage = async () => {
+  const handlePasteButton = async () => {
+    setErrorMsg(null);
+    try {
+      const files = await readImageFromClipboard();
+      setPrepFiles(files);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'No se pudo pegar la imagen.');
+    }
+  };
+
+  const runScanOnBlobs = async (blobs: Blob[], scanScope: 'all' | 'primary_only') => {
+    setErrorMsg(null);
+    setStatusMsg(null);
+    setScanProgress({ stage: 'Iniciando escaneo...', pct: 10 });
+    try {
+      const scanned = await scanRosterFiles(blobs, {
+        monthKey,
+        settings,
+        users,
+        primaryUser,
+        scanScope,
+        onProgress: (stage, pct) => setScanProgress({ stage, pct }),
+      });
+      if (scanned.resolvedModel && scanned.resolvedModel !== settings.model) {
+        await updateSettings({ ...settings, model: scanned.resolvedModel });
+      }
+      setScannedResult(scanned);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error al escanear el cuadrante.');
+    } finally {
+      setScanProgress(null);
+    }
+  };
+
+  const handleDeleteRoster = async () => {
     await removeRosterImage(monthKey);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    for (const p of pageUrls) URL.revokeObjectURL(p.url);
     setRoster(null);
-    setPreviewUrl(null);
+    setPageUrls([]);
+    setConfirmDelete(false);
   };
 
-  const handleApplyDiff = async (selectedIds: Set<string>, applyHolidays: boolean) => {
-    if (!diffReport) return;
+  const handleApplyDiff = async (payload: DiffApplyPayload) => {
+    const { targetMonthKey, changes, applyHolidays, holidayDays, aliasMappings } = payload;
 
-    const selectedChanges = diffReport.changes.filter((c) => selectedIds.has(c.id));
+    for (const map of aliasMappings) {
+      const targetUser = users.find((u) => u.id === map.userId);
+      if (targetUser && !targetUser.alias) {
+        await updateUser({ ...targetUser, alias: map.alias });
+      }
+    }
+
     const createdUserIds = new Map<string, string>();
     let colorIdx = users.length;
-
     const entriesToSave: ShiftEntry[] = [];
 
-    for (const ch of selectedChanges) {
+    for (const ch of changes) {
       let realUserId = ch.userId;
       if (ch.isNewUser) {
         const existingCreated = createdUserIds.get(ch.userName);
@@ -167,7 +258,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         id: `${realUserId}_${ch.date}`,
         userId: realUserId,
         date: ch.date,
-        monthKey: diffReport.monthKey,
+        monthKey: targetMonthKey,
         shift: ch.newShift,
         updatedAt: Date.now(),
       });
@@ -177,19 +268,28 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
       await batchApplyShifts(entriesToSave);
     }
 
-    if (applyHolidays && diffReport.holidayDays.length > 0) {
-      const holidayDates = diffReport.holidayDays.map(
-        (d) => `${diffReport.monthKey}-${String(d).padStart(2, '0')}`
-      );
+    if (applyHolidays && holidayDays.length > 0) {
+      const holidayDates = holidayDays.map((d) => `${targetMonthKey}-${pad2(d)}`);
       await setHolidaysBatch(holidayDates);
     }
 
-    setDiffReport(null);
-    setStatusMsg(`Aplicados ${entriesToSave.length} cambios al cuadrante de ${formatMonthTitle(monthKey)}.`);
+    setScannedResult(null);
+    if (targetMonthKey !== monthKey) {
+      onMonthChange(targetMonthKey);
+    }
+    setStatusMsg(
+      `Aplicados ${entriesToSave.length} cambios al cuadrante de ${formatMonthTitle(targetMonthKey)}.`
+    );
     setTimeout(() => setStatusMsg(null), 4000);
   };
 
+  const allRosterBlobs = useMemo(() => {
+    if (!roster) return [];
+    return [roster.blob, ...(roster.extraPages?.map((p) => p.blob) ?? [])];
+  }, [roster]);
+
   const hasApiKey = settings.apiKey.trim().length > 0;
+  const activePage = pageUrls[activePageIdx] ?? pageUrls[0];
 
   return (
     <div className="space-y-3.5">
@@ -198,120 +298,57 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         <button
           type="button"
           onClick={() => onMonthChange(shiftMonthKey(monthKey, -1))}
-          className="p-2 rounded-xl bg-slate-800/80 text-slate-200"
+          className="p-2 rounded-xl bg-slate-800/80 text-slate-200 active:scale-95"
+          aria-label="Mes anterior"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
         <div className="text-center">
           <h2 className="text-sm font-bold text-white capitalize">{formatMonthTitle(monthKey)}</h2>
-          <p className="text-[11px] text-slate-400">Archivo visual y escaneo IA</p>
+          <p className="text-[11px] text-slate-400">Centro de escaneo y archivo offline</p>
         </div>
         <button
           type="button"
           onClick={() => onMonthChange(shiftMonthKey(monthKey, 1))}
-          className="p-2 rounded-xl bg-slate-800/80 text-slate-200"
+          className="p-2 rounded-xl bg-slate-800/80 text-slate-200 active:scale-95"
+          aria-label="Mes siguiente"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Bloque 1: Archivo visual */}
-      <section className="tactical-card rounded-2xl p-3.5 space-y-3">
-        <div className="flex items-center justify-between">
+      {/* Centro de captura / subida con Drag & Drop y Pegar */}
+      <section
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          handleFilesSelected(e.dataTransfer.files);
+        }}
+        className={`tactical-card rounded-3xl p-3.5 space-y-3 transition-colors ${
+          dragOver ? 'border-amber-400 ring-2 ring-amber-400/40' : ''
+        }`}
+      >
+        <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="text-sm font-bold text-white">Archivo visual del cuadrante</h3>
+            <h3 className="text-sm font-bold text-white">Añadir o escanear cuadrante</h3>
             <p className="text-[11px] text-slate-400">
-              Guardado localmente en el iPhone para consultar offline
+              Recorta, gira y ajusta contraste antes de archivar o leer con IA
             </p>
           </div>
           <button
             type="button"
-            onClick={() => archiveOnlyInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200"
+            onClick={() => void handlePasteButton()}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-[11px] font-semibold text-slate-200 shrink-0 active:scale-95"
+            title="Pegar imagen del portapapeles"
           >
-            <Upload className="w-3.5 h-3.5" />
-            <span>{roster ? 'Reemplazar' : 'Subir'}</span>
+            <ClipboardPaste className="w-3.5 h-3.5 text-amber-400" />
+            <span>Pegar</span>
           </button>
-        </div>
-
-        <input
-          ref={archiveOnlyInputRef}
-          type="file"
-          accept="image/*,application/pdf,.pdf,.csv,.txt"
-          onChange={(e) => void handleArchiveOnly(e)}
-          className="hidden"
-        />
-
-        {previewUrl && roster ? (
-          <div className="space-y-2">
-            {roster.mimeType.startsWith('image/') ? (
-              <div
-                onClick={() => setZoomOpen(true)}
-                className="relative rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950 max-h-64 cursor-pointer group"
-              >
-                <img
-                  src={previewUrl}
-                  alt={`Cuadrante ${monthKey}`}
-                  className="w-full h-56 object-contain"
-                />
-                <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/75 text-xs font-semibold text-white border border-slate-700">
-                  <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Ampliar con zoom</span>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-white truncate">{roster.fileName}</div>
-                    <div className="text-[11px] text-slate-400">
-                      Documento guardado offline ({roster.mimeType || 'archivo'})
-                    </div>
-                  </div>
-                </div>
-                <a
-                  href={previewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-amber-300 shrink-0"
-                >
-                  Abrir
-                </a>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span className="truncate">{roster.fileName}</span>
-              <button
-                type="button"
-                onClick={() => void handleDeleteImage()}
-                className="flex items-center gap-1 text-rose-400 font-medium"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Eliminar</span>
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-slate-700 p-6 text-center bg-slate-900/40">
-            <ImageIcon className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-            <p className="text-xs text-slate-400">
-              Aún no has guardado la foto del cuadrante de {formatMonthTitle(monthKey)}.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* Bloque 2: Escaneo automático con Visión IA + Diff */}
-      <section className="tactical-card rounded-2xl p-3.5 space-y-3">
-        <div>
-          <h3 className="text-sm font-bold text-white">Escaneo automático (IA + Diff)</h3>
-          <p className="text-[11px] text-slate-400">
-            Extrae todos los usuarios y compara con los turnos guardados para mostrar solo cambios.
-          </p>
         </div>
 
         {!hasApiKey && (
@@ -319,8 +356,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div className="text-xs text-amber-200">
-                Falta configurar la <strong>API Key de Visión</strong> para usar el escaneo
-                automático.
+                Configura tu <strong>API Key de Visión</strong> para activar el escaneo automático.
               </div>
             </div>
             <button
@@ -338,23 +374,30 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={(e) => void handleScanFile(e)}
+          onChange={(e) => {
+            handleFilesSelected(e.target.files);
+            e.target.value = '';
+          }}
           className="hidden"
         />
         <input
           ref={galleryInputRef}
           type="file"
           accept="image/*,application/pdf,.pdf,.csv,.txt"
-          onChange={(e) => void handleScanFile(e)}
+          multiple
+          onChange={(e) => {
+            handleFilesSelected(e.target.files);
+            e.target.value = '';
+          }}
           className="hidden"
         />
 
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            disabled={scanning}
-            onClick={() => cameraInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-amber-500 text-[#0B0F17] text-xs font-bold shadow-lg shadow-amber-500/20 disabled:opacity-50"
+            disabled={Boolean(scanProgress)}
+            onClick={() => void handleOpenCamera()}
+            className="flex items-center justify-center gap-2 py-3 px-3 rounded-2xl bg-amber-500 text-[#0B0F17] text-xs font-extrabold shadow-lg shadow-amber-500/20 disabled:opacity-50 active:scale-98"
           >
             <Camera className="w-4 h-4" />
             <span>Hacer Foto</span>
@@ -362,31 +405,34 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
 
           <button
             type="button"
-            disabled={scanning}
+            disabled={Boolean(scanProgress)}
             onClick={() => galleryInputRef.current?.click()}
-            className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs font-bold disabled:opacity-50"
+            className="flex items-center justify-center gap-2 py-3 px-3 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs font-bold disabled:opacity-50 active:scale-98"
           >
-            <ImageIcon className="w-4 h-4 text-sky-400" />
-            <span>Galería / Archivo</span>
+            <Upload className="w-4 h-4 text-sky-400" />
+            <span>Subir Fotos / PDF</span>
           </button>
         </div>
 
-        {roster && (
-          <button
-            type="button"
-            disabled={scanning}
-            onClick={() => void runScanOnBlob(roster.blob)}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-xs font-bold disabled:opacity-50"
-          >
-            <ScanLine className="w-4 h-4" />
-            <span>Escanear cuadrante guardado de este mes</span>
-          </button>
-        )}
+        <p className="text-[10px] text-slate-500 text-center">
+          Soporta varias fotos por mes (cuadrante partido), PDF, CSV o arrastrar y soltar
+        </p>
 
-        {scanning && (
-          <div className="flex items-center justify-center gap-2 py-3 text-xs text-amber-300">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Analizando cuadrante y calculando diferencias...</span>
+        {scanProgress && (
+          <div className="p-3 rounded-2xl bg-slate-900/90 border border-amber-500/30 space-y-2">
+            <div className="flex items-center justify-between text-xs text-amber-300 font-semibold">
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{scanProgress.stage}</span>
+              </span>
+              <span className="tabular-nums">{scanProgress.pct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                className="h-full bg-amber-400 transition-all duration-300"
+                style={{ width: `${scanProgress.pct}%` }}
+              />
+            </div>
           </div>
         )}
 
@@ -403,18 +449,189 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         )}
       </section>
 
-      {zoomOpen && previewUrl && (
+      {/* Archivo visual guardado del mes */}
+      <section className="tactical-card rounded-3xl p-3.5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white">Archivo guardado ({formatMonthTitle(monthKey)})</h3>
+            <p className="text-[11px] text-slate-400">
+              Disponible sin conexión en tu dispositivo
+            </p>
+          </div>
+          {roster && pageUrls.length > 1 && (
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30">
+              {pageUrls.length} partes
+            </span>
+          )}
+        </div>
+
+        {roster ? (
+          <div className="space-y-2.5">
+            {activePage ? (
+              <div
+                onClick={() => setZoomOpen(true)}
+                className="relative rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-950 max-h-72 cursor-pointer group"
+              >
+                <img
+                  src={activePage.url}
+                  alt={`Cuadrante ${monthKey}`}
+                  className="w-full h-60 object-contain"
+                />
+                <div className="absolute bottom-2 right-2 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/80 text-xs font-semibold text-white border border-slate-700">
+                  <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Ampliar (pellizco)</span>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="p-2.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white truncate">{roster.fileName}</div>
+                    <div className="text-[11px] text-slate-400">
+                      Documento guardado offline ({roster.mimeType || 'archivo'})
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {pageUrls.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                {pageUrls.map((p, idx) => (
+                  <button
+                    key={p.url}
+                    type="button"
+                    onClick={() => setActivePageIdx(idx)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border shrink-0 ${
+                      idx === activePageIdx
+                        ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    Parte {idx + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Re-escanear archivo guardado */}
+            <div className="p-2.5 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-400">Re-escanear con IA:</span>
+                <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setRescanScope('all')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold ${
+                      rescanScope === 'all' ? 'bg-sky-500 text-[#070B12]' : 'text-slate-400'
+                    }`}
+                  >
+                    <Users className="w-3 h-3" />
+                    <span>Todos</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRescanScope('primary_only')}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold ${
+                      rescanScope === 'primary_only' ? 'bg-sky-500 text-[#070B12]' : 'text-slate-400'
+                    }`}
+                  >
+                    <User className="w-3 h-3" />
+                    <span>Solo {primaryUser.name}</span>
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={Boolean(scanProgress) || !hasApiKey}
+                onClick={() => void runScanOnBlobs(allRosterBlobs, rescanScope)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-xs font-bold disabled:opacity-45"
+              >
+                <ScanLine className="w-4 h-4" />
+                <span>Escanear archivo guardado</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+              <span className="truncate">{roster.fileName}</span>
+              {confirmDelete ? (
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteRoster()}
+                    className="px-2 py-0.5 rounded bg-rose-600 text-white font-bold"
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="text-slate-400"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex items-center gap-1 text-rose-400 font-medium shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Eliminar</span>
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-700 p-6 text-center bg-slate-900/40">
+            <ImageIcon className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+            <p className="text-xs text-slate-400">
+              Aún no hay imagen o PDF guardado para {formatMonthTitle(monthKey)}.
+            </p>
+          </div>
+        )}
+      </section>
+
+      {prepFiles && (
+        <ImagePrepModal
+          initialFiles={prepFiles}
+          monthTitle={formatMonthTitle(monthKey)}
+          hasApiKey={hasApiKey}
+          onCancel={() => setPrepFiles(null)}
+          onArchiveOnly={async (processed) => {
+            await saveRosterFiles(processed);
+            setPrepFiles(null);
+            setStatusMsg('Cuadrante guardado offline en tu dispositivo.');
+            setTimeout(() => setStatusMsg(null), 3500);
+          }}
+          onScanWithAi={async (processed, scope) => {
+            await saveRosterFiles(processed);
+            setPrepFiles(null);
+            await runScanOnBlobs(processed, scope);
+          }}
+        />
+      )}
+
+      {zoomOpen && pageUrls.length > 0 && (
         <ImageZoomModal
-          imageUrl={previewUrl}
+          images={pageUrls}
+          initialIndex={activePageIdx}
           title={`Cuadrante ${formatMonthTitle(monthKey)}`}
           onClose={() => setZoomOpen(false)}
         />
       )}
 
-      {diffReport && (
+      {scannedResult && (
         <DiffReviewModal
-          report={diffReport}
-          onCancel={() => setDiffReport(null)}
+          scanned={scannedResult}
+          monthKey={monthKey}
+          previewImages={pageUrls}
+          onCancel={() => setScannedResult(null)}
           onApply={handleApplyDiff}
         />
       )}

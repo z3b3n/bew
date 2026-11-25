@@ -17,7 +17,8 @@ import {
 import { USER_COLOR_PALETTE } from '../constants/shifts';
 import { useApp } from '../context/AppContext';
 import { exportBackupJson, importBackupJson } from '../db/indexedDb';
-import type { VisionProvider } from '../types';
+import type { User, VisionProvider } from '../types';
+import { UserModal } from '../components/UserModal';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -37,10 +38,11 @@ export const SettingsView: React.FC = () => {
   const [holidayDate, setHolidayDate] = useState('');
   const [holidayName, setHolidayName] = useState('');
 
-  // Nuevo compañero
+  // Nuevo compañero / Editar compañero
   const [newName, setNewName] = useState('');
   const [newAlias, setNewAlias] = useState('');
   const [newColor, setNewColor] = useState(USER_COLOR_PALETTE[0]);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   // API Key
   const [showKey, setShowKey] = useState(false);
@@ -151,27 +153,10 @@ export const SettingsView: React.FC = () => {
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      const nextName = window.prompt('Editar nombre del compañero:', u.name);
-                      if (nextName && nextName.trim()) {
-                        void updateUser({ ...u, name: nextName.trim() });
-                      }
-                    }}
-                    className="px-2 py-1 rounded-lg bg-slate-800 text-[11px] text-slate-300"
+                    onClick={() => setEditingUser(u)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 text-[11px] text-slate-200 font-semibold"
                   >
                     Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(`¿Eliminar a ${u.name} y todos sus turnos?`)) {
-                        void deleteUser(u.id);
-                      }
-                    }}
-                    className="p-1.5 rounded-lg bg-slate-800 text-rose-400"
-                    aria-label="Eliminar usuario"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
@@ -529,6 +514,24 @@ export const SettingsView: React.FC = () => {
           instalará con el icono del búho y funcionará 100% sin conexión.
         </p>
       </section>
+
+      {editingUser && (
+        <UserModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSave={async (data) => {
+            await updateUser({
+              ...editingUser,
+              name: data.name,
+              alias: data.alias,
+              color: data.color,
+            });
+          }}
+          onDelete={async (id) => {
+            await deleteUser(id);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import type { ShiftCode, ShiftEntry, User } from '../types';
-import { pad2 } from './dateUtils';
+import { getDaysInMonth, pad2 } from './dateUtils';
 
 export interface ScannedUserRow {
   rawName: string;
@@ -8,6 +8,7 @@ export interface ScannedUserRow {
 
 export interface ScannedRosterResult {
   monthKey: string;
+  detectedMonthKey?: string;
   rows: ScannedUserRow[];
   holidays?: number[]; // días del mes marcados como festivos
   notes?: string;
@@ -19,7 +20,9 @@ export interface DiffChangeItem {
   day: number;
   userId: string; // puede ser temporal `new:${rawName}` si aún no existe
   userName: string;
+  rawName: string;
   isNewUser: boolean;
+  isPrimaryUser: boolean;
   oldShift: ShiftCode | null;
   newShift: ShiftCode;
   kind: 'added' | 'modified';
@@ -28,10 +31,13 @@ export interface DiffChangeItem {
 
 export interface RosterDiffReport {
   monthKey: string;
+  detectedMonthKey?: string;
   newUsers: string[];
+  unmatchedRawNames: string[];
   changes: DiffChangeItem[];
   unchangedCount: number;
   holidayDays: number[];
+  scannedRows: ScannedUserRow[];
 }
 
 function normalizeName(name: string): string {
@@ -72,17 +78,39 @@ export function matchScannedUser(rawName: string, users: User[]): User | undefin
 export function buildRosterDiff(
   scanned: ScannedRosterResult,
   existingUsers: User[],
-  shiftMap: Map<string, ShiftEntry>
+  shiftMap: Map<string, ShiftEntry>,
+  userOverrides?: Record<string, string | 'new' | 'ignore'>,
+  targetMonthKeyOverride?: string
 ): RosterDiffReport {
+  const effectiveMonthKey = targetMonthKeyOverride ?? scanned.monthKey;
+  const maxDays = getDaysInMonth(effectiveMonthKey);
   const newUsersSet = new Set<string>();
+  const unmatchedSet = new Set<string>();
   const changes: DiffChangeItem[] = [];
   let unchangedCount = 0;
 
   for (const row of scanned.rows) {
-    const matched = matchScannedUser(row.rawName, existingUsers);
-    const userId = matched ? matched.id : `new:${row.rawName.trim()}`;
-    const userName = matched ? matched.name : row.rawName.trim();
+    const rawName = row.rawName.trim();
+    if (!rawName) continue;
+
+    const override = userOverrides?.[rawName];
+    if (override === 'ignore') continue;
+
+    let matched: User | undefined;
+    if (override && override !== 'new') {
+      matched = existingUsers.find((u) => u.id === override);
+    } else if (override !== 'new') {
+      matched = matchScannedUser(rawName, existingUsers);
+    }
+
+    if (!matchScannedUser(rawName, existingUsers)) {
+      unmatchedSet.add(rawName);
+    }
+
+    const userId = matched ? matched.id : `new:${rawName}`;
+    const userName = matched ? matched.name : rawName;
     const isNewUser = !matched;
+    const isPrimaryUser = Boolean(matched?.isPrimary);
 
     if (isNewUser && userName) {
       newUsersSet.add(userName);
@@ -90,12 +118,12 @@ export function buildRosterDiff(
 
     const dayKeys = Object.keys(row.shifts)
       .map(Number)
-      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 31)
+      .filter((d) => Number.isInteger(d) && d >= 1 && d <= maxDays)
       .sort((a, b) => a - b);
 
     for (const day of dayKeys) {
       const newShift = row.shifts[day];
-      const date = `${scanned.monthKey}-${pad2(day)}`;
+      const date = `${effectiveMonthKey}-${pad2(day)}`;
       const existing = matched ? shiftMap.get(`${matched.id}_${date}`) : undefined;
       const oldShift = existing ? existing.shift : null;
 
@@ -116,7 +144,9 @@ export function buildRosterDiff(
         day,
         userId,
         userName,
+        rawName,
         isNewUser,
+        isPrimaryUser,
         oldShift,
         newShift,
         kind,
@@ -126,15 +156,19 @@ export function buildRosterDiff(
   }
 
   changes.sort((a, b) => {
+    if (a.isPrimaryUser !== b.isPrimaryUser) return a.isPrimaryUser ? -1 : 1;
     if (a.day !== b.day) return a.day - b.day;
     return a.userName.localeCompare(b.userName, 'es');
   });
 
   return {
-    monthKey: scanned.monthKey,
+    monthKey: effectiveMonthKey,
+    detectedMonthKey: scanned.detectedMonthKey,
     newUsers: Array.from(newUsersSet),
+    unmatchedRawNames: Array.from(unmatchedSet),
     changes,
     unchangedCount,
-    holidayDays: scanned.holidays ?? [],
+    holidayDays: (scanned.holidays ?? []).filter((d) => d >= 1 && d <= maxDays),
+    scannedRows: scanned.rows,
   };
 }

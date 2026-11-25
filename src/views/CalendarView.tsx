@@ -1,12 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftRight,
   CalendarPlus,
+  Camera,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Eraser,
   Grid3X3,
   LayoutList,
+  Paintbrush,
   Search,
   Sparkles,
   UserPlus,
@@ -14,7 +17,7 @@ import {
 } from 'lucide-react';
 import {
   SHIFT_DEFINITIONS,
-  USER_COLOR_PALETTE,
+  SHIFT_ORDER,
   WORKING_SHIFTS,
   getShiftHours,
 } from '../constants/shifts';
@@ -22,6 +25,7 @@ import { useApp } from '../context/AppContext';
 import type { ShiftCode, ShiftSwap } from '../types';
 import {
   WEEKDAY_SHORT_ES,
+  addDays,
   formatMonthTitle,
   formatShortDateEs,
   getCalendarGridCells,
@@ -32,12 +36,21 @@ import {
 } from '../utils/dateUtils';
 import { buildMonthIcsContent, downloadIcsFile } from '../utils/icsExport';
 import { DayDetailSheet } from '../components/DayDetailSheet';
+import { UserModal } from '../components/UserModal';
 
 interface CalendarViewProps {
   mode: 'zeto' | 'team';
   monthKey: string;
   onMonthChange: (nextMonthKey: string) => void;
   onOpenSwap: (date: string, currentShift?: ShiftCode) => void;
+  onGoToRoster?: () => void;
+}
+
+type PaintBrush = ShiftCode | 'ERASE';
+
+function parseHHMM(timeStr: string): number {
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -45,12 +58,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   monthKey,
   onMonthChange,
   onOpenSwap,
+  onGoToRoster,
 }) => {
-  const { users, primaryUser, shifts, swaps, shiftMap, holidaySet, settings, addUser } = useApp();
+  const {
+    users,
+    primaryUser,
+    shifts,
+    swaps,
+    shiftMap,
+    holidaySet,
+    settings,
+    addUser,
+    upsertShift,
+  } = useApp();
+
   const [teamDisplay, setTeamDisplay] = useState<'matrix' | 'cards'>('matrix');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCell, setSelectedCell] = useState<{ date: string; userId: string } | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [paintMode, setPaintMode] = useState(false);
+  const [activeBrush, setActiveBrush] = useState<PaintBrush>('M');
+  const [addUserOpen, setAddUserOpen] = useState(false);
+
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const todayStr = getTodayStr();
   const gridCells = useMemo(() => getCalendarGridCells(monthKey), [monthKey]);
@@ -80,11 +110,39 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     );
   }, [users, searchQuery]);
 
-  // Datos de HOY para tarjeta Hero
+  // Datos de HOY y Próximo turno para tarjeta Hero
   const todayEntry = shiftMap.get(`${primaryUser.id}_${todayStr}`);
   const todayDef = todayEntry ? SHIFT_DEFINITIONS[todayEntry.shift] : null;
   const todayIsHoliday = holidaySet.has(todayStr);
   const todayHasSwap = swapsByDate.has(todayStr);
+
+  const todayShiftProgress = useMemo(() => {
+    if (!todayDef?.isWorking || !todayDef.startTime || !todayDef.endTime) return null;
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const startMins = parseHHMM(todayDef.startTime);
+    const endMins = parseHHMM(todayDef.endTime) + (todayDef.crossesMidnight ? 24 * 60 : 0);
+    if (nowMins < startMins || nowMins > endMins) return null;
+    return Math.min(100, Math.max(2, Math.round(((nowMins - startMins) / (endMins - startMins)) * 100)));
+  }, [todayDef]);
+
+  const nextShiftSummary = useMemo(() => {
+    const tomorrowStr = addDays(todayStr, 1);
+    const tomorrowEntry = shiftMap.get(`${primaryUser.id}_${tomorrowStr}`);
+    const tomorrowDef = tomorrowEntry ? SHIFT_DEFINITIONS[tomorrowEntry.shift] : null;
+
+    let nextWorking: { date: string; code: ShiftCode; startTime: string } | null = null;
+    for (let offset = 1; offset <= 14; offset++) {
+      const d = addDays(todayStr, offset);
+      const entry = shiftMap.get(`${primaryUser.id}_${d}`);
+      if (entry && SHIFT_DEFINITIONS[entry.shift].isWorking) {
+        const def = SHIFT_DEFINITIONS[entry.shift];
+        nextWorking = { date: d, code: entry.shift, startTime: def.startTime ?? '' };
+        break;
+      }
+    }
+    return { tomorrowDef, nextWorking };
+  }, [shiftMap, primaryUser.id, todayStr]);
 
   const todayCoincidences = useMemo(() => {
     if (!todayDef?.isWorking) return [];
@@ -105,9 +163,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     let hours = 0;
     let workingDays = 0;
     let holidaysWorked = 0;
+    let assignedCount = 0;
     for (const d of monthDates) {
       const entry = shiftMap.get(`${primaryUser.id}_${d}`);
       if (!entry) continue;
+      assignedCount++;
       const def = SHIFT_DEFINITIONS[entry.shift];
       if (def.isWorking) {
         workingDays++;
@@ -115,8 +175,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         if (holidaySet.has(d)) holidaysWorked++;
       }
     }
-    return { hours, workingDays, holidaysWorked };
+    return { hours, workingDays, holidaysWorked, assignedCount };
   }, [monthDates, shiftMap, primaryUser.id, settings.nightHoursMode, holidaySet]);
+
+  const handleCellAction = (date: string, userId: string) => {
+    if (paintMode) {
+      void upsertShift(userId, date, activeBrush === 'ERASE' ? null : activeBrush);
+      return;
+    }
+    setSelectedCell({ date, userId });
+  };
 
   const handleExportIcs = () => {
     const { content, eventsCount } = buildMonthIcsContent({
@@ -136,10 +204,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     setTimeout(() => setExportNotice(null), 3000);
   };
 
+  const handleGridTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+
+  const handleGridTouchEnd = (e: React.TouchEvent) => {
+    if (!swipeStartRef.current || e.changedTouches.length !== 1) return;
+    const dx = e.changedTouches[0].clientX - swipeStartRef.current.x;
+    const dy = e.changedTouches[0].clientY - swipeStartRef.current.y;
+    swipeStartRef.current = null;
+    if (Math.abs(dx) > 65 && Math.abs(dy) < 42) {
+      onMonthChange(shiftMonthKey(monthKey, dx < 0 ? 1 : -1));
+    }
+  };
+
   return (
     <div className="space-y-3">
       {mode === 'zeto' ? (
-        /* TARJETA HERO "HOY" */
+        /* TARJETA HERO "HOY" + Próximo turno */
         <button
           type="button"
           onClick={() => setSelectedCell({ date: todayStr, userId: primaryUser.id })}
@@ -151,7 +234,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] font-extrabold tracking-widest uppercase px-2 py-0.5 rounded-full bg-white/10 text-amber-300 border border-white/15">
                   HOY · {formatShortDateEs(todayStr)}
                 </span>
@@ -170,9 +253,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <div className="mt-2">
                 {todayDef ? (
                   <>
-                    <div className="text-xl font-extrabold text-white">
-                      {todayDef.label}
-                    </div>
+                    <div className="text-xl font-extrabold text-white">{todayDef.label}</div>
                     <div className="text-xs text-slate-300 mt-0.5">
                       {todayDef.isWorking
                         ? `${todayDef.startTime} – ${todayDef.endTime} · ${todayDef.totalHours}h`
@@ -203,8 +284,44 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </div>
           </div>
 
+          {todayShiftProgress !== null && (
+            <div className="mt-2.5 space-y-1">
+              <div className="h-1.5 rounded-full bg-black/35 overflow-hidden">
+                <div
+                  className="h-full bg-amber-400 rounded-full"
+                  style={{ width: `${todayShiftProgress}%` }}
+                />
+              </div>
+              <div className="text-[10px] text-amber-200/80 text-right tabular-nums">
+                En servicio · {todayShiftProgress}% completado
+              </div>
+            </div>
+          )}
+
+          {(nextShiftSummary.tomorrowDef || nextShiftSummary.nextWorking) && (
+            <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between gap-2 text-[11px] text-slate-300 flex-wrap">
+              <span>
+                Mañana:{' '}
+                <strong className="text-white">
+                  {nextShiftSummary.tomorrowDef
+                    ? `${nextShiftSummary.tomorrowDef.code} (${nextShiftSummary.tomorrowDef.shortLabel})`
+                    : 'Sin asignar'}
+                </strong>
+              </span>
+              {nextShiftSummary.nextWorking && (
+                <span className="text-amber-200/90">
+                  Próximo servicio:{' '}
+                  <strong>
+                    {formatShortDateEs(nextShiftSummary.nextWorking.date)} (
+                    {nextShiftSummary.nextWorking.code} · {nextShiftSummary.nextWorking.startTime})
+                  </strong>
+                </span>
+              )}
+            </div>
+          )}
+
           {todayCoincidences.length > 0 && (
-            <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center gap-1.5 flex-wrap">
+            <div className="mt-2 pt-2 border-t border-white/10 flex items-center gap-1.5 flex-wrap">
               <Users className="w-3.5 h-3.5 text-amber-300 shrink-0" />
               <span className="text-[11px] text-slate-300">Contigo hoy:</span>
               {todayCoincidences.map((u) => (
@@ -255,8 +372,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       )}
 
-      {/* Navegador de Mes + Exportar .ics */}
-      <div className="flex items-center gap-2">
+      {/* Navegador de Mes + Pintar + Exportar .ics */}
+      <div className="flex items-center gap-1.5">
         <div className="flex-1 tactical-card rounded-2xl p-1.5 flex items-center justify-between">
           <button
             type="button"
@@ -267,7 +384,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <h2 className="text-sm font-bold text-white capitalize">
               {formatMonthTitle(monthKey)}
             </h2>
@@ -290,18 +407,84 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </button>
         </div>
 
+        {(mode === 'zeto' || teamDisplay === 'matrix') && (
+          <button
+            type="button"
+            onClick={() => setPaintMode((p) => !p)}
+            title="Modo pintar turnos rápido"
+            className={`flex items-center gap-1 px-3 py-3 rounded-2xl border text-xs font-bold active:scale-95 transition-all ${
+              paintMode
+                ? 'bg-amber-500 text-[#070B12] border-amber-300 shadow-lg shadow-amber-500/25'
+                : 'tactical-card border-white/15 text-slate-200'
+            }`}
+          >
+            <Paintbrush className="w-4 h-4" />
+            <span className="hidden sm:inline">{paintMode ? 'Listo' : 'Pintar'}</span>
+          </button>
+        )}
+
         {mode === 'zeto' && (
           <button
             type="button"
             onClick={handleExportIcs}
             title="Exportar turnos de ZETO a Calendario iOS (.ics)"
-            className="flex items-center gap-1.5 px-3.5 py-3 rounded-2xl tactical-card border-amber-500/40 text-xs font-bold text-amber-300 active:scale-95 transition-transform"
+            className="flex items-center gap-1 px-3 py-3 rounded-2xl tactical-card border-amber-500/40 text-xs font-bold text-amber-300 active:scale-95 transition-transform"
           >
             <CalendarPlus className="w-4 h-4" />
             <span>.ics</span>
           </button>
         )}
       </div>
+
+      {/* Paleta rápida de Pintado */}
+      {paintMode && (mode === 'zeto' || teamDisplay === 'matrix') && (
+        <div className="tactical-card rounded-2xl p-2.5 border-amber-500/40 space-y-2">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-amber-300 font-bold">
+              Modo Pintar activo: toca cualquier celda para asignar
+            </span>
+            <button
+              type="button"
+              onClick={() => setPaintMode(false)}
+              className="text-slate-300 font-semibold px-2 py-0.5 rounded bg-slate-800"
+            >
+              Cerrar
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {([...SHIFT_ORDER, 'F'] as ShiftCode[]).map((code) => {
+              const d = SHIFT_DEFINITIONS[code];
+              const active = activeBrush === code;
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setActiveBrush(code)}
+                  className={`shrink-0 px-3 py-1.5 rounded-xl border text-xs font-extrabold transition-transform ${
+                    active
+                      ? `${d.badgeBg} ${d.badgeText} ring-2 ring-amber-400 scale-105`
+                      : `${d.badgeBg} ${d.badgeText} ${d.badgeBorder} opacity-75`
+                  }`}
+                >
+                  {code}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setActiveBrush('ERASE')}
+              className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold ${
+                activeBrush === 'ERASE'
+                  ? 'bg-rose-500/25 border-rose-400 text-rose-200 ring-2 ring-rose-400'
+                  : 'bg-slate-900 border-slate-700 text-slate-400'
+              }`}
+            >
+              <Eraser className="w-3.5 h-3.5" />
+              <span>Borrar</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {exportNotice && (
         <div className="px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-xs text-amber-200 text-center">
@@ -339,8 +522,30 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </div>
           </div>
 
-          {/* Cuadrícula mensual visual con celdas coloreadas */}
-          <div className="tactical-card rounded-3xl p-3">
+          {zetoMonthSummary.assignedCount === 0 && onGoToRoster && (
+            <div className="tactical-card rounded-2xl p-3 border-amber-500/30 flex items-center justify-between gap-2 flex-wrap">
+              <div className="text-xs text-slate-300">
+                Este mes aún está vacío. Sube la foto del cuadrante o píntalo a mano.
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={onGoToRoster}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500 text-[#070B12] text-xs font-bold"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Escanear foto</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Cuadrícula mensual visual con swipe horizontal */}
+          <div
+            className="tactical-card rounded-3xl p-3"
+            onTouchStart={handleGridTouchStart}
+            onTouchEnd={handleGridTouchEnd}
+          >
             <div className="grid grid-cols-7 gap-1.5 mb-2">
               {WEEKDAY_SHORT_ES.map((wd, idx) => (
                 <div
@@ -379,7 +584,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   <button
                     key={dateStr}
                     type="button"
-                    onClick={() => setSelectedCell({ date: dateStr, userId: primaryUser.id })}
+                    onClick={() => handleCellAction(dateStr, primaryUser.id)}
                     className={`relative h-[68px] rounded-2xl p-1.5 flex flex-col items-center justify-between border transition-all active:scale-95 ${cellSurface} ${
                       isToday ? 'ring-2 ring-amber-400 shadow-lg shadow-amber-500/25' : ''
                     }`}
@@ -450,7 +655,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </div>
         </>
       ) : (
-        /* PESTAÑA TODOS / EQUIPO: Consulta completa de todos los compañeros */
+        /* PESTAÑA TODOS / EQUIPO: Consulta completa con columna Día + ZETO fijadas */
         <div className="space-y-2.5">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
@@ -466,15 +671,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
             <button
               type="button"
-              onClick={() => {
-                const name = window.prompt('Nombre del compañero:');
-                if (name && name.trim()) {
-                  void addUser({
-                    name: name.trim(),
-                    color: USER_COLOR_PALETTE[users.length % USER_COLOR_PALETTE.length],
-                  });
-                }
-              }}
+              onClick={() => setAddUserOpen(true)}
               className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-amber-500 text-[#070B12] text-xs font-bold shrink-0 active:scale-95"
               title="Añadir compañero"
             >
@@ -508,29 +705,36 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
           {teamDisplay === 'matrix' ? (
             <div className="tactical-card rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[65dvh]">
                 <table className="w-full border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-900/95 border-b border-white/10">
-                      <th className="sticky left-0 z-10 bg-[#0D131F] px-2.5 py-2.5 text-left text-[11px] font-semibold text-slate-300 border-r border-white/10 min-w-[74px]">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-[#0B111C] border-b border-white/10">
+                      <th className="sticky left-0 z-30 bg-[#0D131F] px-2.5 py-2.5 text-left text-[11px] font-semibold text-slate-300 border-r border-white/10 w-[74px] min-w-[74px]">
                         Día
                       </th>
-                      {filteredUsers.map((u) => (
-                        <th
-                          key={u.id}
-                          className={`px-2 py-2.5 text-center font-bold whitespace-nowrap min-w-[66px] ${
-                            u.isPrimary ? 'bg-amber-500/15 text-amber-300' : 'text-slate-200'
-                          }`}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{ backgroundColor: u.color }}
-                            />
-                            <span className="truncate max-w-[76px]">{u.name}</span>
-                          </div>
-                        </th>
-                      ))}
+                      {filteredUsers.map((u, idx) => {
+                        const isStickyPrimary = u.isPrimary && idx === 0;
+                        return (
+                          <th
+                            key={u.id}
+                            className={`px-2 py-2.5 text-center font-bold whitespace-nowrap min-w-[68px] ${
+                              isStickyPrimary
+                                ? 'sticky left-[74px] z-30 bg-[#141A26] text-amber-300 border-r border-amber-500/25'
+                                : u.isPrimary
+                                  ? 'bg-amber-500/15 text-amber-300'
+                                  : 'bg-[#0B111C] text-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <span
+                                className="w-2 h-2 rounded-full shrink-0"
+                                style={{ backgroundColor: u.color }}
+                              />
+                              <span className="truncate max-w-[76px]">{u.name}</span>
+                            </div>
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/6">
@@ -540,6 +744,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       const isToday = d === todayStr;
                       const isHoliday = holidaySet.has(d);
                       const hasSwap = swapsByDate.has(d);
+                      const zetoEntry = shiftMap.get(`${primaryUser.id}_${d}`);
+                      const zetoWorkingShift =
+                        zetoEntry && SHIFT_DEFINITIONS[zetoEntry.shift].isWorking
+                          ? zetoEntry.shift
+                          : null;
 
                       return (
                         <tr
@@ -552,7 +761,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                                 : 'hover:bg-slate-900/40'
                           }
                         >
-                          <td className="sticky left-0 z-10 bg-[#0D131F] px-2.5 py-2 border-r border-white/10 font-medium">
+                          <td className="sticky left-0 z-10 bg-[#0D131F] px-2.5 py-2 border-r border-white/10 font-medium w-[74px] min-w-[74px]">
                             <div className="flex items-center justify-between gap-1">
                               <span
                                 className={`tabular-nums ${
@@ -569,26 +778,35 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                               </div>
                             </div>
                           </td>
-                          {filteredUsers.map((u) => {
+                          {filteredUsers.map((u, idx) => {
                             const entry = shiftMap.get(`${u.id}_${d}`);
                             const def = entry ? SHIFT_DEFINITIONS[entry.shift] : null;
                             const zetoSwapCell = u.isPrimary && hasSwap;
+                            const isStickyPrimary = u.isPrimary && idx === 0;
+                            const coincidesWithZeto =
+                              !u.isPrimary && zetoWorkingShift !== null && entry?.shift === zetoWorkingShift;
 
                             return (
                               <td
                                 key={`${u.id}_${d}`}
                                 className={`p-1 text-center ${
-                                  u.isPrimary ? 'bg-amber-500/5' : ''
+                                  isStickyPrimary
+                                    ? 'sticky left-[74px] z-10 bg-[#101827] border-r border-amber-500/20'
+                                    : u.isPrimary
+                                      ? 'bg-amber-500/5'
+                                      : ''
                                 }`}
                               >
                                 <button
                                   type="button"
-                                  onClick={() => setSelectedCell({ date: d, userId: u.id })}
+                                  onClick={() => handleCellAction(d, u.id)}
                                   className={`w-full py-1 rounded-lg flex items-center justify-center active:scale-95 border ${
                                     zetoSwapCell
                                       ? 'bg-fuchsia-500/25 border-fuchsia-400 text-white'
                                       : def
-                                        ? `${def.cellBg} ${def.cellBorder}`
+                                        ? `${def.cellBg} ${def.cellBorder} ${
+                                            coincidesWithZeto ? 'ring-1 ring-amber-400/55' : ''
+                                          }`
                                         : 'border-transparent'
                                   }`}
                                 >
@@ -711,6 +929,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           targetUserId={selectedCell.userId}
           onClose={() => setSelectedCell(null)}
           onOpenSwap={onOpenSwap}
+        />
+      )}
+
+      {addUserOpen && (
+        <UserModal
+          defaultColorIndex={users.length}
+          onClose={() => setAddUserOpen(false)}
+          onSave={async (data) => {
+            await addUser(data);
+          }}
         />
       )}
     </div>

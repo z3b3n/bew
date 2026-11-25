@@ -26,9 +26,10 @@ Disponible en tres formatos:
 - **Todos:** Cuadrante completo del equipo en **Matriz** (columna de días y columna **ZETO** fijadas, resto desplazable) o en **Tarjetas** agrupadas por franja horaria.
 
 ### 3. Cuadrante Original y Escaneo Automático (IA + Diff)
-- **Archivo visual offline:** Sube y guarda en IndexedDB la foto o imagen del cuadrante original de cada mes con visor a pantalla completa y zoom.
-- **Escaneo con Cámara o Galería:** Extrae automáticamente la tabla completa de todos los usuarios mediante un modelo de Visión/LLM.
-- **Detección inteligente de cambios (Diff):** Compara la nueva foto con los turnos guardados del mes y muestra únicamente las modificaciones (ej. *"Día 14: Carlos pasa de M a T"*) para revisarlas antes de aplicarlas.
+- **Archivo visual offline multipágina:** Sube, pega desde el portapapeles o fotografía varias partes de un cuadrante partido, guárdalas en IndexedDB y consúltalas con visor táctil (pellizco para zoom y rotación).
+- **Estudio previo de imagen:** Recorta, rota ±90° y activa la nitidez de alto contraste antes de enviar la imagen a la IA o archivarla.
+- **Escaneo con Cámara Nativa, Galería, PDF o CSV:** Extrae automáticamente todo el equipo o solo tu turno (`ZETO`), anclando los días del calendario para evitar desfases de columnas.
+- **Revisión visual editable (Diff):** Coteja los cambios en cuadrícula o lista, corrige cualquier celda con un toque, vincula nombres nuevos a compañeros existentes y aplica solo lo que necesites.
 
 ### 4. Cambios de Turno y Balance de Servicios
 - Registra intercambios **1x1** (día que ZETO cede ↔ día que ZETO cubre) o **Servicios debidos / A favor**.

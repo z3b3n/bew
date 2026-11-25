@@ -44,7 +44,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             APP_VERSION="${GITHUB_REF_NAME#v}"
           else
-            APP_VERSION="1.2.0"
+            APP_VERSION="1.3.0"
           fi
           echo "APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
@@ -202,12 +202,12 @@ jobs:
             - **`BEW-Android.apk`** — Android firmado, listo para instalar directamente.
             - **`BEW-Fenix6XPro.prg`** — Widget nativo para **Garmin Fenix 6X Pro** (copiar por USB en `GARMIN/APPS/`).
 
-            ### Novedades
-            - Interfaz táctica iOS con tarjeta **HOY**, barra flotante y cuadrante coloreado.
-            - Pestaña **Todos** para consultar los turnos de todo el equipo y añadir compañeros.
-            - Días con cambio coloreados en fucsia (`⇄`) y festivos (`★`) con turnos `AD` / `AN`.
-            - Escaneo IA de imágenes, **PDF** y **CSV** con Diff inteligente.
-            - Widget **Garmin Fenix 6X Pro** con vista rápida **Glance** (Hoy + Mañana), navegación por días y resumen mensual.
+            ### Novedades v1.3.0
+            - **Estudio previo de imagen:** recorte táctil, rotación ±90°, mejora de contraste para documentos y soporte multipágina para cuadrantes partidos en varias fotos.
+            - **Cámara nativa y portapapeles:** captura directa con `@capacitor/camera` en iOS/Android, arrastrar y soltar o pegar imagen (`Ctrl+V`).
+            - **Motor IA anclado por calendario:** guía exacta de días del mes para evitar desplazamientos de columna, modo `Todo el equipo` o `Solo ZETO` y aviso si la foto corresponde a otro mes.
+            - **Revisión visual editable:** cuadrícula interactiva antes de guardar (toca cualquier celda para corregir el OCR) y mapeo de alias de compañeros.
+            - **UI/UX mejorada:** modo **Pintar turnos** rápido, gestos swipe entre meses, progreso en vivo del turno actual + próximo servicio, y columna **ZETO** fija real en la matriz del equipo.
           files: |
             BEW-iOS.ipa
             BEW-Android.apk

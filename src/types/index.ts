@@ -27,12 +27,19 @@ export interface HolidayEntry {
   name?: string;
 }
 
+export interface RosterPageItem {
+  blob: Blob;
+  mimeType: string;
+  fileName: string;
+}
+
 export interface RosterImage {
   monthKey: string; // YYYY-MM
   blob: Blob;
   mimeType: string;
   fileName: string;
   uploadedAt: number;
+  extraPages?: RosterPageItem[];
 }
 
 export type SwapType = 'exchange' | 'debt';
