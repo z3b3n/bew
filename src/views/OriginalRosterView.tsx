@@ -22,6 +22,7 @@ import { scanRosterFiles } from '../services/visionScanner';
 import type { RosterImage, ShiftEntry } from '../types';
 import { formatMonthTitle, pad2, shiftMonthKey } from '../utils/dateUtils';
 import { captureWithNativeCamera, readImageFromClipboard } from '../utils/imageProcessing';
+import { convertPdfToImagesAndText, isPdfBlob } from '../utils/pdfHelper';
 import type { ScannedRosterResult } from '../utils/rosterDiff';
 import { DiffReviewModal, type DiffApplyPayload } from '../components/DiffReviewModal';
 import { ImagePrepModal } from '../components/ImagePrepModal';
@@ -55,7 +56,9 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
   const [zoomOpen, setZoomOpen] = useState(false);
 
   const [prepFiles, setPrepFiles] = useState<File[] | null>(null);
-  const [rescanScope, setRescanScope] = useState<'all' | 'primary_only'>('all');
+  const [pendingPdfText, setPendingPdfText] = useState<string | undefined>(undefined);
+  const [preparingPdf, setPreparingPdf] = useState(false);
+  const [rescanScope, setRescanScope] = useState<'all' | 'primary_only'>('primary_only');
   const [scanProgress, setScanProgress] = useState<{ stage: string; pct: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -65,6 +68,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
 
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const scanAbortRef = useRef<AbortController | null>(null);
 
   const buildUrlsForRoster = (found: RosterImage | null): ZoomImageItem[] => {
     if (!found) return [];
@@ -173,12 +177,57 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     }
   };
 
-  const handleFilesSelected = (files: FileList | File[] | null) => {
+  const handleFilesSelected = async (files: FileList | File[] | null) => {
     if (!files) return;
     const arr = Array.from(files);
     if (arr.length === 0) return;
     setErrorMsg(null);
-    setPrepFiles(arr);
+    setPendingPdfText(undefined);
+
+    const processedArr: File[] = [];
+    const collectedTexts: string[] = [];
+    let hasPdf = false;
+
+    for (const f of arr) {
+      if (await isPdfBlob(f, f.name)) {
+        hasPdf = true;
+      }
+    }
+
+    if (hasPdf) {
+      setPreparingPdf(true);
+      try {
+        for (const f of arr) {
+          if (await isPdfBlob(f, f.name)) {
+            const { pageFiles, extractedText } = await convertPdfToImagesAndText(f);
+            if (extractedText.trim()) {
+              collectedTexts.push(extractedText);
+            }
+            if (pageFiles.length > 0) {
+              processedArr.push(...pageFiles);
+            } else {
+              // Fallback directo si pdfjs-dist no pudo renderizar este PDF
+              const normalizedPdf =
+                f.type === 'application/pdf'
+                  ? f
+                  : new File([f], f.name || 'cuadrante.pdf', { type: 'application/pdf' });
+              processedArr.push(normalizedPdf);
+            }
+          } else {
+            processedArr.push(f);
+          }
+        }
+      } finally {
+        setPreparingPdf(false);
+      }
+    } else {
+      processedArr.push(...arr);
+    }
+
+    if (collectedTexts.length > 0) {
+      setPendingPdfText(collectedTexts.join('\n\n'));
+    }
+    setPrepFiles(processedArr);
   };
 
   const handlePasteButton = async () => {
@@ -191,9 +240,15 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     }
   };
 
-  const runScanOnBlobs = async (blobs: Blob[], scanScope: 'all' | 'primary_only') => {
+  const runScanOnBlobs = async (
+    blobs: Blob[],
+    scanScope: 'all' | 'primary_only',
+    extractedPdfText?: string
+  ) => {
     setErrorMsg(null);
     setStatusMsg(null);
+    const controller = new AbortController();
+    scanAbortRef.current = controller;
     setScanProgress({ stage: 'Iniciando escaneo...', pct: 10 });
     try {
       const scanned = await scanRosterFiles(blobs, {
@@ -202,6 +257,8 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         users,
         primaryUser,
         scanScope,
+        extractedPdfText,
+        signal: controller.signal,
         onProgress: (stage, pct) => setScanProgress({ stage, pct }),
       });
       if (scanned.resolvedModel && scanned.resolvedModel !== settings.model) {
@@ -211,6 +268,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error al escanear el cuadrante.');
     } finally {
+      scanAbortRef.current = null;
       setScanProgress(null);
     }
   };
@@ -327,7 +385,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
-          handleFilesSelected(e.dataTransfer.files);
+          void handleFilesSelected(e.dataTransfer.files);
         }}
         className={`tactical-card rounded-3xl p-3.5 space-y-3 transition-colors ${
           dragOver ? 'border-amber-400 ring-2 ring-amber-400/40' : ''
@@ -375,7 +433,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
           accept="image/*"
           capture="environment"
           onChange={(e) => {
-            handleFilesSelected(e.target.files);
+            void handleFilesSelected(e.target.files);
             e.target.value = '';
           }}
           className="hidden"
@@ -386,7 +444,7 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
           accept="image/*,application/pdf,.pdf,.csv,.txt"
           multiple
           onChange={(e) => {
-            handleFilesSelected(e.target.files);
+            void handleFilesSelected(e.target.files);
             e.target.value = '';
           }}
           className="hidden"
@@ -418,14 +476,30 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
           Soporta varias fotos por mes (cuadrante partido), PDF, CSV o arrastrar y soltar
         </p>
 
+        {preparingPdf && (
+          <div className="p-3 rounded-2xl bg-slate-900/90 border border-sky-500/30 flex items-center gap-2 text-xs text-sky-300 font-semibold">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Convirtiendo páginas del PDF y extrayendo texto...</span>
+          </div>
+        )}
+
         {scanProgress && (
           <div className="p-3 rounded-2xl bg-slate-900/90 border border-amber-500/30 space-y-2">
-            <div className="flex items-center justify-between text-xs text-amber-300 font-semibold">
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>{scanProgress.stage}</span>
+            <div className="flex items-center justify-between text-xs text-amber-300 font-semibold gap-2">
+              <span className="flex items-center gap-2 min-w-0">
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span className="truncate">{scanProgress.stage}</span>
               </span>
-              <span className="tabular-nums">{scanProgress.pct}%</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="tabular-nums">{scanProgress.pct}%</span>
+                <button
+                  type="button"
+                  onClick={() => scanAbortRef.current?.abort()}
+                  className="px-2 py-0.5 rounded-lg bg-rose-500/20 border border-rose-500/40 text-rose-200 text-[10px] font-bold"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
             <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
               <div
@@ -602,17 +676,24 @@ export const OriginalRosterView: React.FC<OriginalRosterViewProps> = ({
           initialFiles={prepFiles}
           monthTitle={formatMonthTitle(monthKey)}
           hasApiKey={hasApiKey}
-          onCancel={() => setPrepFiles(null)}
+          hasPdfText={Boolean(pendingPdfText)}
+          onCancel={() => {
+            setPrepFiles(null);
+            setPendingPdfText(undefined);
+          }}
           onArchiveOnly={async (processed) => {
             await saveRosterFiles(processed);
             setPrepFiles(null);
+            setPendingPdfText(undefined);
             setStatusMsg('Cuadrante guardado offline en tu dispositivo.');
             setTimeout(() => setStatusMsg(null), 3500);
           }}
           onScanWithAi={async (processed, scope) => {
+            const pdfText = pendingPdfText;
             await saveRosterFiles(processed);
             setPrepFiles(null);
-            await runScanOnBlobs(processed, scope);
+            setPendingPdfText(undefined);
+            await runScanOnBlobs(processed, scope, pdfText);
           }}
         />
       )}

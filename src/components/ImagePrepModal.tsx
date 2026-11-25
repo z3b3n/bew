@@ -2,14 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Camera,
   Check,
-  Crop,
   FileText,
   ImagePlus,
   Loader2,
   Maximize,
   RotateCcw,
   RotateCw,
-  ScanLine,
   Sparkles,
   Trash2,
   User,
@@ -38,6 +36,7 @@ interface ImagePrepModalProps {
   initialFiles: File[];
   monthTitle: string;
   hasApiKey: boolean;
+  hasPdfText?: boolean;
   onCancel: () => void;
   onArchiveOnly: (processedFiles: File[]) => Promise<void>;
   onScanWithAi: (processedFiles: File[], scanScope: 'all' | 'primary_only') => Promise<void>;
@@ -62,13 +61,13 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
   initialFiles,
   monthTitle,
   hasApiKey,
+  hasPdfText = false,
   onCancel,
   onArchiveOnly,
   onScanWithAi,
 }) => {
   const [items, setItems] = useState<PrepItem[]>(() => initialFiles.map(buildPrepItem));
   const [activeIdx, setActiveIdx] = useState(0);
-  const [scanScope, setScanScope] = useState<'all' | 'primary_only'>('all');
   const [busy, setBusy] = useState(false);
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -224,14 +223,17 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
     return result;
   };
 
-  const handleConfirm = async (mode: 'archive' | 'scan') => {
+  const handleConfirm = async (
+    mode: 'archive' | 'scan',
+    scope: 'all' | 'primary_only' = 'primary_only'
+  ) => {
     setBusy(true);
     try {
       const files = await buildProcessedFiles();
       if (mode === 'archive') {
         await onArchiveOnly(files);
       } else {
-        await onScanWithAi(files, scanScope);
+        await onScanWithAi(files, scope);
       }
     } finally {
       setBusy(false);
@@ -461,65 +463,52 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
           </div>
         )}
 
-        {/* Alcance del escaneo */}
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-slate-400 flex items-center gap-1">
-            <Crop className="w-3.5 h-3.5 text-amber-400" />
-            <span>Alcance IA:</span>
-          </span>
-          <div className="grid grid-cols-2 gap-1 p-0.5 rounded-xl bg-slate-900 border border-slate-800">
-            <button
-              type="button"
-              onClick={() => setScanScope('all')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
-                scanScope === 'all' ? 'bg-amber-500 text-[#070B12]' : 'text-slate-400'
-              }`}
-            >
-              <Users className="w-3 h-3" />
-              <span>Todo el equipo</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setScanScope('primary_only')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
-                scanScope === 'primary_only' ? 'bg-amber-500 text-[#070B12]' : 'text-slate-400'
-              }`}
-            >
-              <User className="w-3 h-3" />
-              <span>Solo ZETO</span>
-            </button>
+        {hasPdfText && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-200">
+            <FileText className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+            <span>PDF convertido a imagen + texto digital para escaneo rápido</span>
           </div>
-        </div>
+        )}
 
         {/* Botones finales */}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            disabled={busy}
-            onClick={() => void handleConfirm('archive')}
-            className="py-3 px-3 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 disabled:opacity-50"
+            disabled={busy || !hasApiKey}
+            onClick={() => void handleConfirm('scan', 'primary_only')}
+            className="flex items-center justify-center gap-1.5 py-3 px-2.5 rounded-xl bg-amber-500 text-[#070B12] text-xs font-extrabold shadow-lg shadow-amber-500/20 disabled:opacity-45"
           >
-            Solo archivar
+            {busy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <User className="w-4 h-4" />
+            )}
+            <span>{hasApiKey ? 'Solo ZETO (Rápido)' : 'Falta API Key'}</span>
           </button>
+
           <button
             type="button"
             disabled={busy || !hasApiKey}
-            onClick={() => void handleConfirm('scan')}
-            className="flex items-center justify-center gap-1.5 py-3 px-3 rounded-xl bg-amber-500 text-[#070B12] text-xs font-extrabold shadow-lg shadow-amber-500/20 disabled:opacity-45"
+            onClick={() => void handleConfirm('scan', 'all')}
+            className="flex items-center justify-center gap-1.5 py-3 px-2.5 rounded-xl bg-sky-500/20 border border-sky-400/50 text-sky-200 text-xs font-extrabold disabled:opacity-45"
           >
             {busy ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Procesando...</span>
-              </>
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
-              <>
-                <ScanLine className="w-4 h-4" />
-                <span>{hasApiKey ? 'Escanear con IA' : 'Falta API Key'}</span>
-              </>
+              <Users className="w-4 h-4" />
             )}
+            <span>Todo el equipo</span>
           </button>
         </div>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void handleConfirm('archive')}
+          className="w-full py-2 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-semibold text-slate-300 disabled:opacity-50"
+        >
+          Solo archivar sin escanear
+        </button>
       </div>
     </div>
   );
