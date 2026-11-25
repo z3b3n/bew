@@ -56,7 +56,7 @@ export const Layout: React.FC<LayoutProps> = ({
                   ZETO
                 </span>
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-white/10">
-                  v1.3.1
+                  v1.3.2
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">{TAB_TITLES[activeTab]}</p>

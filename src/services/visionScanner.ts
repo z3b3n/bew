@@ -3,7 +3,7 @@ import type { AppSettings, ShiftCode, User } from '../types';
 import { getDaysInMonth, getWeekdayShort, pad2 } from '../utils/dateUtils';
 import { processRosterImage } from '../utils/imageProcessing';
 import { isPdfBlob } from '../utils/pdfHelper';
-import type { ScannedRosterResult, ScannedUserRow } from '../utils/rosterDiff';
+import { matchScannedUser, type ScannedRosterResult, type ScannedUserRow } from '../utils/rosterDiff';
 
 const MAX_DIMENSION = 3072;
 const SCAN_TIMEOUT_MS = 55000;
@@ -19,6 +19,7 @@ export interface ScanRosterOptions {
   primaryUser: User;
   scanScope: 'all' | 'primary_only';
   extractedPdfText?: string;
+  localFallbackResult?: ScannedRosterResult | null;
   signal?: AbortSignal;
   onProgress?: (stage: string, pct: number) => void;
 }
@@ -96,10 +97,11 @@ Códigos de turno válidos en la salida (usa EXACTAMENTE estos códigos):
 
 Instrucciones:
 1. ${scopeInstruction}${multiPageInstruction}
-2. Para cada usuario, devuelve "compactShifts" como una cadena compacta con los pares día:código separados por comas (ejemplo: "1:L,2:AD,3:AN,4:M"). Verifica columna por columna alineando día numérico y día de la semana.
-3. Si la cabecera del cuadrante indica otro mes/año distinto a "${monthKey}", indícalo en "detectedMonthKey" con formato "YYYY-MM"; si coincide o no se ve el año, pon "${monthKey}".
-4. Si la cabecera marca días festivos destacados en rojo/festivo, incluye sus números de día en "holidays".
-5. Devuelve ÚNICAMENTE un objeto JSON válido con este esquema exacto, sin texto adicional:
+2. IMPORTANTE EN CUADRANTES COMINT: Las celdas vacías/blancas en la fila de un trabajador significan Día Libre ('L'), igual que 'C', 'AP', 'OTRO', 'A/C' o franjas rojas de vacaciones/baja. Incluye TODOS los días del 1 al ${totalDays} para cada trabajador.
+3. Para cada usuario, devuelve "compactShifts" como una cadena compacta con los pares día:código separados por comas (ejemplo: "1:L,2:AD,3:AN,4:M"). Verifica columna por columna alineando día numérico y día de la semana.
+4. Si la cabecera del cuadrante indica otro mes/año distinto a "${monthKey}", indícalo en "detectedMonthKey" con formato "YYYY-MM"; si coincide o no se ve el año, pon "${monthKey}".
+5. Si la cabecera marca días festivos destacados en rojo/festivo, incluye sus números de día en "holidays".
+6. Devuelve ÚNICAMENTE un objeto JSON válido con este esquema exacto, sin texto adicional:
 {
   "detectedMonthKey": "${monthKey}",
   "holidays": [6, 8],
@@ -124,12 +126,17 @@ export function normalizeScannedCode(raw: string): ShiftCode | null {
     code === 'AP' ||
     code === 'PD' ||
     code === 'OTRO' ||
+    code === 'A/C' ||
+    code === 'AC' ||
     code === 'D' ||
     code === 'DL' ||
     code === 'LIBRE' ||
     code === 'V' ||
     code === 'VAC' ||
     code === 'B' ||
+    code === 'BAJA' ||
+    code === 'PERMISO' ||
+    code === 'P' ||
     code === 'X' ||
     code === '-'
   ) {
@@ -234,29 +241,90 @@ function parseJsonResponse(rawText: string, fallbackMonthKey: string): ScannedRo
   };
 }
 
-async function resolveAvailableGeminiModel(apiKey: string): Promise<string | null> {
+const DEFAULT_GEMINI_FALLBACK_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.0-flash-lite',
+  'gemini-2.5-pro',
+];
+
+const EXCLUDED_MODEL_SUBSTRINGS = [
+  'tts',
+  'image',
+  'imagen',
+  'embedding',
+  'veo',
+  'aqa',
+  'audio',
+  'robotics',
+  'computer-use',
+  'learnlm',
+  'gemma',
+];
+
+async function discoverExtraGeminiModels(apiKey: string, signal: AbortSignal): Promise<string[]> {
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+      { signal }
     );
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = (await res.json()) as {
       models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
     };
     const valid = (data.models ?? [])
       .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
       .map((m) => (m.name ?? '').replace(/^models\//, ''))
-      .filter(Boolean);
+      .filter(
+        (name) =>
+          Boolean(name) &&
+          !EXCLUDED_MODEL_SUBSTRINGS.some((bad) => name.toLowerCase().includes(bad))
+      );
 
-    const flashModels = valid.filter((name) => name.includes('flash') && !name.includes('thinking'));
-    if (flashModels.length > 0) {
-      const sorted = [...flashModels].sort((a, b) => b.localeCompare(a));
-      return sorted[0];
-    }
-    return valid[0] ?? null;
+    return valid.sort((a, b) => {
+      const aFlash = a.includes('flash') && !a.includes('thinking') ? 0 : 1;
+      const bFlash = b.includes('flash') && !b.includes('thinking') ? 0 : 1;
+      if (aFlash !== bFlash) return aFlash - bFlash;
+      return b.localeCompare(a);
+    });
   } catch {
-    return null;
+    return [];
   }
+}
+
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const id = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(id);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function buildLocalFallback(
+  localFallbackResult: ScannedRosterResult,
+  scanScope: 'all' | 'primary_only',
+  primaryUser: User
+): ScannedRosterResult {
+  if (scanScope !== 'primary_only') return localFallbackResult;
+  const filtered = localFallbackResult.rows.filter((r) => {
+    const matched = matchScannedUser(r.rawName, [primaryUser]);
+    return Boolean(matched);
+  });
+  return {
+    ...localFallbackResult,
+    rows: filtered.length > 0 ? filtered : localFallbackResult.rows.slice(0, 1),
+  };
 }
 
 type GeminiPart =
@@ -405,49 +473,92 @@ export async function scanRosterFiles(
       }
 
       onProgress?.('Leyendo turnos con Gemini IA...', 55);
-      let modelUsed = settings.model.trim() || 'gemini-flash-latest';
-      let res = await callGeminiParts(modelUsed, apiKey, parts, controller.signal, {
-        useSchema: true,
-        useThinkingCap: true,
-      });
+      const configuredModel = (settings.model.trim() || 'gemini-flash-latest').replace(
+        /^models\//,
+        ''
+      );
+      const candidates = Array.from(
+        new Set([configuredModel, ...DEFAULT_GEMINI_FALLBACK_MODELS])
+      );
 
-      if (res.status === 400) {
-        res = await callGeminiParts(modelUsed, apiKey, parts, controller.signal, {
-          useSchema: false,
-          useThinkingCap: false,
+      let discoveredAdded = false;
+      let firstStatusWas404 = false;
+      let lastErrMsg = '';
+
+      for (let idx = 0; idx < candidates.length; idx++) {
+        const candidate = candidates[idx];
+        let res = await callGeminiParts(candidate, apiKey, parts, controller.signal, {
+          useSchema: true,
+          useThinkingCap: true,
         });
-      }
 
-      if (res.status === 404) {
-        const discovered = await resolveAvailableGeminiModel(apiKey);
-        if (discovered && discovered !== modelUsed) {
-          modelUsed = discovered;
-          res = await callGeminiParts(modelUsed, apiKey, parts, controller.signal, {
-            useSchema: true,
-            useThinkingCap: true,
+        if (res.status === 400) {
+          res = await callGeminiParts(candidate, apiKey, parts, controller.signal, {
+            useSchema: false,
+            useThinkingCap: false,
           });
+        }
+
+        if (res.ok) {
+          onProgress?.('Calculando diferencias y validando días...', 85);
+          const data = (await res.json()) as {
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          };
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!text) {
+            throw new Error('Gemini no devolvió texto interpretable.');
+          }
+          const parsed = parseJsonResponse(text, monthKey);
+          onProgress?.('Completado', 100);
+          return {
+            ...parsed,
+            // Solo guardamos el nuevo modelo si el configurado dio 404 (no por 503 puntual)
+            resolvedModel: firstStatusWas404 ? candidate : undefined,
+          };
+        }
+
+        const errText = await res.text();
+        lastErrMsg = `Error Gemini (${res.status}): ${errText.slice(0, 200)}`;
+        if (idx === 0 && res.status === 404) {
+          firstStatusWas404 = true;
+        }
+
+        const isRetryableStatus =
+          res.status === 503 ||
+          res.status === 429 ||
+          res.status === 500 ||
+          res.status === 502 ||
+          res.status === 504 ||
+          res.status === 404;
+
+        if (!isRetryableStatus) {
+          throw new Error(lastErrMsg);
+        }
+
+        if (!discoveredAdded) {
+          discoveredAdded = true;
+          const extra = await discoverExtraGeminiModels(apiKey, controller.signal);
+          for (const m of extra) {
+            if (!candidates.includes(m)) candidates.push(m);
+          }
+        }
+
+        const nextCandidate = candidates[idx + 1];
+        if (nextCandidate) {
+          onProgress?.(
+            `Servidor de ${candidate} saturado (${res.status}), cambiando a ${nextCandidate}...`,
+            60
+          );
+          await sleepAbortable(650, controller.signal);
         }
       }
 
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Error Gemini (${res.status}): ${errText.slice(0, 220)}`);
+      if (options.localFallbackResult && options.localFallbackResult.rows.length > 0) {
+        onProgress?.('Usando lector local del PDF...', 90);
+        return buildLocalFallback(options.localFallbackResult, scanScope, primaryUser);
       }
 
-      onProgress?.('Calculando diferencias y validando días...', 85);
-      const data = (await res.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      };
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        throw new Error('Gemini no devolvió texto interpretable.');
-      }
-      const parsed = parseJsonResponse(text, monthKey);
-      onProgress?.('Completado', 100);
-      return {
-        ...parsed,
-        resolvedModel: modelUsed,
-      };
+      throw new Error(lastErrMsg || 'No se pudo conectar con ningún modelo de Gemini.');
     }
 
     // OpenAI o endpoint compatible

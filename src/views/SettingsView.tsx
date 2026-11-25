@@ -371,6 +371,26 @@ export const SettingsView: React.FC = () => {
               onChange={(e) => void updateSettings({ ...settings, model: e.target.value })}
               className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white font-mono"
             />
+            {settings.visionProvider === 'gemini' && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {(['gemini-2.0-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'] as const).map(
+                  (preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => void updateSettings({ ...settings, model: preset })}
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-mono border ${
+                        settings.model === preset
+                          ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  )
+                )}
+              </div>
+            )}
           </div>
 
           {settings.visionProvider === 'custom' && (

@@ -37,9 +37,11 @@ interface ImagePrepModalProps {
   monthTitle: string;
   hasApiKey: boolean;
   hasPdfText?: boolean;
+  hasLocalParsed?: boolean;
   onCancel: () => void;
   onArchiveOnly: (processedFiles: File[]) => Promise<void>;
   onScanWithAi: (processedFiles: File[], scanScope: 'all' | 'primary_only') => Promise<void>;
+  onUseLocalParsed?: (processedFiles: File[], scope: 'all' | 'primary_only') => Promise<void>;
 }
 
 type DragHandle = 'nw' | 'ne' | 'sw' | 'se' | 'move';
@@ -62,9 +64,11 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
   monthTitle,
   hasApiKey,
   hasPdfText = false,
+  hasLocalParsed = false,
   onCancel,
   onArchiveOnly,
   onScanWithAi,
+  onUseLocalParsed,
 }) => {
   const [items, setItems] = useState<PrepItem[]>(() => initialFiles.map(buildPrepItem));
   const [activeIdx, setActiveIdx] = useState(0);
@@ -224,7 +228,7 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
   };
 
   const handleConfirm = async (
-    mode: 'archive' | 'scan',
+    mode: 'archive' | 'scan' | 'local',
     scope: 'all' | 'primary_only' = 'primary_only'
   ) => {
     setBusy(true);
@@ -232,6 +236,8 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
       const files = await buildProcessedFiles();
       if (mode === 'archive') {
         await onArchiveOnly(files);
+      } else if (mode === 'local' && onUseLocalParsed) {
+        await onUseLocalParsed(files, scope);
       } else {
         await onScanWithAi(files, scope);
       }
@@ -463,7 +469,33 @@ export const ImagePrepModal: React.FC<ImagePrepModalProps> = ({
           </div>
         )}
 
-        {hasPdfText && (
+        {hasLocalParsed && onUseLocalParsed && (
+          <div className="p-2 rounded-2xl bg-emerald-500/12 border border-emerald-500/35 space-y-1.5">
+            <div className="text-[11px] font-bold text-emerald-300">
+              ⚡ Tabla COMINT detectada en el PDF (instantáneo, sin IA):
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleConfirm('local', 'primary_only')}
+                className="py-2 px-2 rounded-xl bg-emerald-500 text-[#070B12] text-[11px] font-extrabold disabled:opacity-50"
+              >
+                Leer directo: Solo ZETO
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleConfirm('local', 'all')}
+                className="py-2 px-2 rounded-xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-[11px] font-bold disabled:opacity-50"
+              >
+                Leer directo: Todos
+              </button>
+            </div>
+          </div>
+        )}
+
+        {hasPdfText && !hasLocalParsed && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] text-emerald-200">
             <FileText className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
             <span>PDF convertido a imagen + texto digital para escaneo rápido</span>
