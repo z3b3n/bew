@@ -1,6 +1,7 @@
 using Toybox.Application.Properties;
 using Toybox.Application.Storage;
 using Toybox.Communications;
+using Toybox.Lang;
 using Toybox.System;
 using Toybox.Time;
 using Toybox.Time.Gregorian;
@@ -30,7 +31,7 @@ class BewSyncManager {
         } catch (ex) {
             propUrl = null;
         }
-        if (propUrl != null && propUrl instanceof String && !propUrl.equals("")) {
+        if (propUrl != null && propUrl instanceof Lang.String && !propUrl.equals("")) {
             return propUrl;
         }
         return BewSyncConfig.DEFAULT_SYNC_URL;
@@ -68,28 +69,37 @@ class BewSyncManager {
         lastStatus = "Sync...";
         WatchUi.requestUpdate();
 
-        Communications.makeWebRequest(
-            url,
-            {"t" => nowEpoch.toString()},
-            {
-                :method => Communications.HTTP_REQUEST_METHOD_GET,
-                :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_TEXT_PLAIN
-            },
-            method(:onSyncResponse)
-        );
+        try {
+            Communications.makeWebRequest(
+                url,
+                {"t" => nowEpoch.toString()},
+                {
+                    :method => Communications.HTTP_REQUEST_METHOD_GET,
+                    :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_TEXT_PLAIN
+                },
+                new Lang.Method(self, :onSyncResponse)
+            );
+        } catch (ex) {
+            isSyncing = false;
+            lastStatus = "Err req";
+            WatchUi.requestUpdate();
+        }
     }
 
     function onSyncResponse(responseCode, data) {
         isSyncing = false;
-        if (responseCode == 200 && data != null && data instanceof String) {
+        if (responseCode == 200 && data != null && data instanceof Lang.String) {
             BewStorage.importSyncPayload(data);
             var now = Time.now();
             lastSyncEpoch = now.value();
             var info = Gregorian.info(now, Time.FORMAT_SHORT);
             lastStatus = "Sync " + BewStorage.pad2(info.hour) + ":" + BewStorage.pad2(info.min);
-            Storage.setValue("_lastSync", lastStatus);
+            try {
+                Storage.setValue("_lastSync", lastStatus);
+            } catch (ex) {
+            }
         } else {
-            lastStatus = "Err " + responseCode.toString();
+            lastStatus = "Err " + (responseCode != null ? responseCode.toString() : "?");
         }
         WatchUi.requestUpdate();
     }
@@ -98,9 +108,12 @@ class BewSyncManager {
         if (lastStatus != null && !lastStatus.equals("")) {
             return lastStatus;
         }
-        var stored = Storage.getValue("_lastSync");
-        if (stored != null && stored instanceof String) {
-            return stored;
+        try {
+            var stored = Storage.getValue("_lastSync");
+            if (stored != null && stored instanceof Lang.String) {
+                return stored;
+            }
+        } catch (ex) {
         }
         return "";
     }

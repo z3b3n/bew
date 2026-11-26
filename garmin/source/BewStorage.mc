@@ -1,5 +1,6 @@
 using Toybox.Application.Storage;
 using Toybox.Graphics;
+using Toybox.Lang;
 using Toybox.Time;
 using Toybox.Time.Gregorian;
 
@@ -171,7 +172,7 @@ module BewStorage {
 
     function getShift(dateKey) {
         var val = Storage.getValue(dateKey);
-        if (val != null && val instanceof String) {
+        if (val != null && val instanceof Lang.String) {
             return val;
         }
         return "";
@@ -259,7 +260,7 @@ module BewStorage {
 
     // Formato soportado en settings y sync: "2026-12:L,AD,AN,M,T,N,..."
     function importMonthString(raw) {
-        if (raw == null || !(raw instanceof String)) {
+        if (raw == null || !(raw instanceof Lang.String)) {
             return false;
         }
         var colonIdx = raw.find(":");
@@ -293,7 +294,7 @@ module BewStorage {
     }
 
     function importSyncPayload(raw) {
-        if (raw == null || !(raw instanceof String)) {
+        if (raw == null || !(raw instanceof Lang.String)) {
             return 0;
         }
         var imported = 0;

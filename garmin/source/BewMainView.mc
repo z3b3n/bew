@@ -10,7 +10,10 @@ class BewMainView extends WatchUi.View {
     }
 
     function onShow() {
-        getSyncManager().syncNow(false);
+        try {
+            getSyncManager().syncNow(false);
+        } catch (ex) {
+        }
     }
 
     function moveDay(delta) {
@@ -90,7 +93,7 @@ class BewMainView extends WatchUi.View {
         // Estado de sincronización
         var syncMgr = getSyncManager();
         var syncStatus = syncMgr.getStatusText();
-        if (!syncStatus.equals("")) {
+        if (syncStatus != null && !syncStatus.equals("")) {
             dc.setColor(syncMgr.isSyncing ? Graphics.COLOR_GREEN : Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
             dc.drawText(cx, h - 22, Graphics.FONT_XTINY, syncStatus, Graphics.TEXT_JUSTIFY_CENTER);
         }
