@@ -258,6 +258,212 @@ module BewStorage {
             code.equals("F");
     }
 
+    function isWorkingShift(code) {
+        if (code == null) {
+            return false;
+        }
+        return code.equals("M") ||
+            code.equals("T") ||
+            code.equals("N") ||
+            code.equals("AD") ||
+            code.equals("AN") ||
+            code.equals("VN");
+    }
+
+    function getShiftStartMin(code) {
+        if (code == null) {
+            return -1;
+        }
+        if (code.equals("M") || code.equals("AD")) {
+            return 480;
+        }
+        if (code.equals("T")) {
+            return 900;
+        }
+        if (code.equals("N")) {
+            return 1260;
+        }
+        if (code.equals("AN") || code.equals("VN")) {
+            return 1200;
+        }
+        return -1;
+    }
+
+    function getShiftEndMin(code) {
+        if (code == null) {
+            return -1;
+        }
+        if (code.equals("M")) {
+            return 900;
+        }
+        if (code.equals("T") || code.equals("AD")) {
+            return 1200;
+        }
+        if (code.equals("N") || code.equals("AN") || code.equals("VN")) {
+            return 1920;
+        }
+        return -1;
+    }
+
+    function getShiftStartStr(code) {
+        if (code == null) {
+            return "";
+        }
+        if (code.equals("M") || code.equals("AD")) {
+            return "08:00";
+        }
+        if (code.equals("T")) {
+            return "15:00";
+        }
+        if (code.equals("N")) {
+            return "21:00";
+        }
+        if (code.equals("AN") || code.equals("VN")) {
+            return "20:00";
+        }
+        return "";
+    }
+
+    function getShiftShortHours(code) {
+        if (code == null || code.equals("")) {
+            return "--";
+        }
+        if (code.equals("M")) {
+            return "08-15";
+        }
+        if (code.equals("T")) {
+            return "15-21";
+        }
+        if (code.equals("N")) {
+            return "21-08";
+        }
+        if (code.equals("AD")) {
+            return "08-20";
+        }
+        if (code.equals("AN") || code.equals("VN")) {
+            return "20-08";
+        }
+        if (code.equals("L")) {
+            return "Libre";
+        }
+        if (code.equals("F")) {
+            return "Festivo";
+        }
+        if (code.equals("C")) {
+            return "Curso";
+        }
+        if (code.equals("PO")) {
+            return "P.Ofic";
+        }
+        if (code.equals("AP")) {
+            return "A.Prop";
+        }
+        return code;
+    }
+
+    function formatDurationHm(totalMins) {
+        if (totalMins < 0) {
+            totalMins = 0;
+        }
+        var h = totalMins / 60;
+        var m = totalMins % 60;
+        if (h <= 0) {
+            return m.toString() + "m";
+        }
+        return h.toString() + "h " + pad2(m) + "m";
+    }
+
+    function setHolidaysRaw(csv) {
+        try {
+            if (csv == null || csv.equals("")) {
+                Storage.deleteValue("_holidays");
+            } else {
+                Storage.setValue("_holidays", csv);
+            }
+        } catch (ex) {
+        }
+    }
+
+    function isHoliday(dateKey) {
+        try {
+            var val = Storage.getValue("_holidays");
+            if (val != null && val instanceof Lang.String) {
+                return val.find(dateKey) != null;
+            }
+        } catch (ex) {
+        }
+        return false;
+    }
+
+    function getLiveShiftStatus() {
+        var now = Time.now();
+        var info = Gregorian.info(now, Time.FORMAT_SHORT);
+        var nowMin = info.hour * 60 + info.min;
+        var today = Time.today();
+
+        // Turno nocturno de ayer aún activo hoy
+        var yesterday = addDaysToMoment(today, -1);
+        var yCode = getShift(formatDateKey(yesterday));
+        var yEnd = getShiftEndMin(yCode);
+        if (yEnd > 1440 && nowMin < (yEnd - 1440)) {
+            var yStart = getShiftStartMin(yCode);
+            var elapsed = (1440 - yStart) + nowMin;
+            var dur = yEnd - yStart;
+            var rem = dur - elapsed;
+            var prog = dur > 0 ? (elapsed.toFloat() / dur.toFloat()) : 0.0;
+            return {
+                "state" => :active,
+                "code" => yCode,
+                "remMin" => rem,
+                "progress" => prog
+            };
+        }
+
+        // Turno de hoy
+        var tCode = getShift(formatDateKey(today));
+        if (isWorkingShift(tCode)) {
+            var tStart = getShiftStartMin(tCode);
+            var tEnd = getShiftEndMin(tCode);
+            if (nowMin < tStart) {
+                return {
+                    "state" => :upcoming,
+                    "code" => tCode,
+                    "inMin" => tStart - nowMin,
+                    "startStr" => getShiftStartStr(tCode)
+                };
+            }
+            if (nowMin < tEnd) {
+                var tDur = tEnd - tStart;
+                var tElapsed = nowMin - tStart;
+                var tProg = tDur > 0 ? (tElapsed.toFloat() / tDur.toFloat()) : 0.0;
+                return {
+                    "state" => :active,
+                    "code" => tCode,
+                    "remMin" => tEnd - nowMin,
+                    "progress" => tProg
+                };
+            }
+        }
+
+        // Próximo servicio en los próximos 14 días
+        for (var d = 1; d <= 14; d++) {
+            var nMom = addDaysToMoment(today, d);
+            var nCode = getShift(formatDateKey(nMom));
+            if (isWorkingShift(nCode)) {
+                var nInfo = Gregorian.info(nMom, Time.FORMAT_SHORT);
+                return {
+                    "state" => :next,
+                    "code" => nCode,
+                    "dayLabel" => getWeekdayShortEs(nInfo.day_of_week),
+                    "startStr" => getShiftStartStr(nCode),
+                    "daysAhead" => d
+                };
+            }
+        }
+
+        return {"state" => :none};
+    }
+
     // Formato soportado en settings y sync: "2026-12:L,AD,AN,M,T,N,..."
     function importMonthString(raw) {
         if (raw == null || !(raw instanceof Lang.String)) {
@@ -306,7 +512,9 @@ module BewStorage {
                 if (line.length() > 0 && line.substring(line.length() - 1, line.length()).equals("\r")) {
                     line = line.substring(0, line.length() - 1);
                 }
-                if (line.length() > 0 && !line.substring(0, 1).equals("#")) {
+                if (line.length() >= 2 && line.substring(0, 2).equals("H:")) {
+                    setHolidaysRaw(line.substring(2, line.length()));
+                } else if (line.length() > 0 && !line.substring(0, 1).equals("#")) {
                     if (importMonthString(line)) {
                         imported++;
                     }

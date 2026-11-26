@@ -72,10 +72,11 @@ Descarga **`BEW-Android.apk`** desde la sección **Releases** e instálalo direc
 1. Descarga **`BEW-Fenix6XPro.prg`** desde la sección **Releases**.
 2. Conecta tu **Garmin Fenix 6X Pro** por USB al ordenador.
 3. Copia `BEW-Fenix6XPro.prg` dentro de la carpeta **`GARMIN/APPS/`** del reloj y desconéctalo de forma segura.
-4. En el reloj, desliza por los widgets (Glances) para ver **BEW · HOY** y el turno de mañana; pulsa **START** para abrir el widget completo:
-   - **UP / DOWN:** cambiar de día.
-   - **START/SELECT:** cambiar el turno del día (`M → T → N → AD → AN → VN → C → PO → AP → L → F`) y guardarlo en el reloj.
-   - **Mantener UP (Menú):** **Sincronizar** (descarga turnos desde el móvil), ir a **Hoy** o ver el **Resumen del Mes** (horas totales y conteo de turnos).
+4. En el reloj, desliza por los widgets (Glances) para ver **BEW · HOY** (tiempo restante en vivo si estás en servicio, o cuándo es tu próximo turno) y pulsa **START** para abrir el widget completo:
+   - **UP / DOWN:** cambiar de día (y de semana/mes en las vistas secundarias).
+   - **START/SELECT:** alternar entre **Hoy → Vista Semana (7 días) → Resumen del Mes**.
+   - **Mantener UP (Menú):** **Sincronizar**, **Vista Semana**, **Resumen Mes**, **Ir a Hoy** o **Editar turno**.
+   - Sincroniza automáticamente en segundo plano cada ~2 horas y marca en rojo los días **festivos**.
 
 ### Sincronización Automática Móvil → Garmin (GitHub Gist)
 1. Crea un **Personal Access Token (classic)** en GitHub con el permiso **`gist`**.

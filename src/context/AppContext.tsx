@@ -158,12 +158,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
     try {
-      const latestShifts = await getAllShifts();
+      const [latestShifts, latestHolidays] = await Promise.all([
+        getAllShifts(),
+        getAllHolidays(),
+      ]);
       const result = await pushShiftsToGarminGist({
         token,
         gistId: latestSettings.garminGistId,
         shifts: latestShifts,
         primaryUserId: PRIMARY_USER_ID,
+        holidays: latestHolidays,
       });
 
       const updatedSettings: AppSettings = {
@@ -274,8 +278,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         await putHoliday(entry);
         setHolidays((prev) => [...prev, entry]);
       }
+      scheduleGarminAutoSync();
     },
-    [holidaySet]
+    [holidaySet, scheduleGarminAutoSync]
   );
 
   const setHolidaysBatch = useCallback(
@@ -290,9 +295,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       if (toAdd.length > 0) {
         setHolidays((prev) => [...prev, ...toAdd]);
+        scheduleGarminAutoSync();
       }
     },
-    [holidaySet]
+    [holidaySet, scheduleGarminAutoSync]
   );
 
   const upsertHolidayEntries = useCallback(
@@ -315,15 +321,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
           return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
         });
+        scheduleGarminAutoSync();
       }
     },
-    []
+    [scheduleGarminAutoSync]
   );
 
-  const deleteHolidayEntry = useCallback(async (date: string) => {
-    await removeHoliday(date);
-    setHolidays((prev) => prev.filter((h) => h.date !== date));
-  }, []);
+  const deleteHolidayEntry = useCallback(
+    async (date: string) => {
+      await removeHoliday(date);
+      setHolidays((prev) => prev.filter((h) => h.date !== date));
+      scheduleGarminAutoSync();
+    },
+    [scheduleGarminAutoSync]
+  );
 
   const addUser = useCallback(async (data: Omit<User, 'id' | 'createdAt' | 'isPrimary'>) => {
     const newUser: User = {

@@ -1,4 +1,4 @@
-import type { ShiftEntry } from '../types';
+import type { HolidayEntry, ShiftEntry } from '../types';
 
 export const GARMIN_GIST_FILENAME = 'bew-shifts.txt';
 
@@ -8,7 +8,11 @@ function formatMonthKey(date: Date): string {
   return `${y}-${m}`;
 }
 
-export function buildGarminSyncPayload(shifts: ShiftEntry[], primaryUserId: string): string {
+export function buildGarminSyncPayload(
+  shifts: ShiftEntry[],
+  primaryUserId: string,
+  holidays?: HolidayEntry[]
+): string {
   const primaryShifts = shifts.filter((s) => s.userId === primaryUserId);
   const byDate = new Map<string, string>();
   const months = new Set<string>();
@@ -47,6 +51,11 @@ export function buildGarminSyncPayload(shifts: ShiftEntry[], primaryUserId: stri
     lines.push(`${monthKey}:${tokens.join(',')}`);
   }
 
+  if (holidays !== undefined) {
+    const holidayDates = Array.from(new Set(holidays.map((h) => h.date))).sort();
+    lines.push(`H:${holidayDates.join(',')}`);
+  }
+
   return lines.join('\n');
 }
 
@@ -69,6 +78,7 @@ export async function pushShiftsToGarminGist(params: {
   gistId?: string;
   shifts: ShiftEntry[];
   primaryUserId: string;
+  holidays?: HolidayEntry[];
 }): Promise<{ gistId: string; rawUrl: string; syncedAt: number }> {
   const token = params.token.trim();
   const gistId = params.gistId?.trim() ?? '';
@@ -77,7 +87,7 @@ export async function pushShiftsToGarminGist(params: {
     throw new Error('Falta el token de GitHub para sincronizar con Garmin.');
   }
 
-  const content = buildGarminSyncPayload(params.shifts, params.primaryUserId);
+  const content = buildGarminSyncPayload(params.shifts, params.primaryUserId, params.holidays);
   const url = gistId
     ? `https://api.github.com/gists/${encodeURIComponent(gistId)}`
     : 'https://api.github.com/gists';
