@@ -9,6 +9,10 @@ class BewMainView extends WatchUi.View {
         View.initialize();
     }
 
+    function onShow() {
+        getSyncManager().syncNow(false);
+    }
+
     function moveDay(delta) {
         dayOffset += delta;
         WatchUi.requestUpdate();
@@ -81,6 +85,14 @@ class BewMainView extends WatchUi.View {
 
             dc.setColor(BewStorage.getShiftColor(nextCode), Graphics.COLOR_TRANSPARENT);
             dc.drawText(w - 54, rowY, Graphics.FONT_XTINY, nextDisplay, Graphics.TEXT_JUSTIFY_RIGHT);
+        }
+
+        // Estado de sincronización
+        var syncMgr = getSyncManager();
+        var syncStatus = syncMgr.getStatusText();
+        if (!syncStatus.equals("")) {
+            dc.setColor(syncMgr.isSyncing ? Graphics.COLOR_GREEN : Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cx, h - 22, Graphics.FONT_XTINY, syncStatus, Graphics.TEXT_JUSTIFY_CENTER);
         }
     }
 }

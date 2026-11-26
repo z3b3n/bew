@@ -5,4 +5,7 @@
     <setting propertyKey="@Properties.month2Data" title="@Strings.Month2Title">
         <settingConfig type="alphaNumeric" />
     </setting>
+    <setting propertyKey="@Properties.syncUrl" title="@Strings.SyncUrlTitle">
+        <settingConfig type="alphaNumeric" />
+    </setting>
 </settings>

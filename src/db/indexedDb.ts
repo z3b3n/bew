@@ -66,6 +66,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   model: 'gemini-flash-latest',
   customEndpoint: '',
   nightHoursMode: 'statutory',
+  garminSyncEnabled: false,
+  githubToken: '',
+  garminGistId: '',
+  garminGistRawUrl: '',
 };
 
 let dbPromise: Promise<IDBPDatabase<BewDBSchema>> | null = null;
@@ -224,12 +228,13 @@ export async function getSettings(): Promise<AppSettings> {
   const db = await getDb();
   const s = await db.get('settings', 'app');
   if (!s) return DEFAULT_SETTINGS;
-  if (s.visionProvider === 'gemini' && s.model === 'gemini-2.5-flash') {
-    const migrated = { ...s, model: 'gemini-flash-latest' };
+  const merged: AppSettings = { ...DEFAULT_SETTINGS, ...s };
+  if (merged.visionProvider === 'gemini' && merged.model === 'gemini-2.5-flash') {
+    const migrated = { ...merged, model: 'gemini-flash-latest' };
     await db.put('settings', migrated);
     return migrated;
   }
-  return s;
+  return merged;
 }
 
 export async function putSettings(settings: AppSettings): Promise<void> {

@@ -10,7 +10,10 @@ class BewMenuDelegate extends WatchUi.Menu2InputDelegate {
 
     function onSelect(item) {
         var id = item.getId();
-        if (id == :today) {
+        if (id == :sync) {
+            WatchUi.popView(WatchUi.SLIDE_DOWN);
+            getSyncManager().syncNow(true);
+        } else if (id == :today) {
             mainView.resetToday();
             WatchUi.popView(WatchUi.SLIDE_DOWN);
         } else if (id == :summary) {
@@ -51,6 +54,7 @@ class BewDelegate extends WatchUi.BehaviorDelegate {
 
     function onMenu() {
         var menu = new WatchUi.Menu2({:title => "BEW Opciones"});
+        menu.addItem(new WatchUi.MenuItem("Sincronizar", "Descargar turnos", :sync, {}));
         menu.addItem(new WatchUi.MenuItem("Ir a Hoy", "Fecha actual", :today, {}));
         menu.addItem(new WatchUi.MenuItem("Resumen Mes", "Horas y turnos", :summary, {}));
         WatchUi.pushView(menu, new BewMenuDelegate(mainView), WatchUi.SLIDE_UP);

@@ -5,7 +5,7 @@ using Toybox.Time.Gregorian;
 
 (:glance)
 module BewStorage {
-    var SHIFT_CYCLE = ["", "M", "T", "N", "AD", "AN", "VN", "C", "PO", "AP", "L"];
+    var SHIFT_CYCLE = ["", "M", "T", "N", "AD", "AN", "VN", "C", "PO", "AP", "L", "F"];
 
     function getShiftColor(code) {
         if (code == null || code.equals("")) {
@@ -34,6 +34,9 @@ module BewStorage {
         }
         if (code.equals("PO") || code.equals("AP")) {
             return 0x00AAAA;
+        }
+        if (code.equals("F")) {
+            return Graphics.COLOR_RED;
         }
         return Graphics.COLOR_LT_GRAY;
     }
@@ -72,6 +75,9 @@ module BewStorage {
         if (code.equals("L")) {
             return "Libre";
         }
+        if (code.equals("F")) {
+            return "Festivo";
+        }
         return code;
     }
 
@@ -99,6 +105,9 @@ module BewStorage {
         }
         if (code.equals("L")) {
             return "Dia Libre (0h)";
+        }
+        if (code.equals("F")) {
+            return "Festivo (0h)";
         }
         return "";
     }
@@ -234,14 +243,28 @@ module BewStorage {
         };
     }
 
-    // Formato soportado en settings: "2026-12:L,AD,AN,M,T,N,..."
+    function isValidShiftCode(code) {
+        return code.equals("M") ||
+            code.equals("T") ||
+            code.equals("N") ||
+            code.equals("AD") ||
+            code.equals("AN") ||
+            code.equals("VN") ||
+            code.equals("C") ||
+            code.equals("PO") ||
+            code.equals("AP") ||
+            code.equals("L") ||
+            code.equals("F");
+    }
+
+    // Formato soportado en settings y sync: "2026-12:L,AD,AN,M,T,N,..."
     function importMonthString(raw) {
         if (raw == null || !(raw instanceof String)) {
-            return;
+            return false;
         }
         var colonIdx = raw.find(":");
         if (colonIdx == null || colonIdx < 7) {
-            return;
+            return false;
         }
         var monthKey = raw.substring(0, colonIdx);
         var rest = raw.substring(colonIdx + 1, raw.length());
@@ -251,9 +274,14 @@ module BewStorage {
             var isEnd = (i == rest.length());
             if (isEnd || rest.substring(i, i + 1).equals(",")) {
                 var token = rest.substring(start, i);
+                if (token.length() > 0 && token.substring(token.length() - 1, token.length()).equals("\r")) {
+                    token = token.substring(0, token.length() - 1);
+                }
                 if (day <= 31) {
                     var key = monthKey + "-" + pad2(day);
-                    if (token.equals("M") || token.equals("T") || token.equals("N") || token.equals("AD") || token.equals("AN") || token.equals("VN") || token.equals("C") || token.equals("PO") || token.equals("AP") || token.equals("L")) {
+                    if (token.equals("")) {
+                        setShift(key, "");
+                    } else if (isValidShiftCode(token)) {
                         setShift(key, token);
                     }
                 }
@@ -261,5 +289,30 @@ module BewStorage {
                 start = i + 1;
             }
         }
+        return true;
+    }
+
+    function importSyncPayload(raw) {
+        if (raw == null || !(raw instanceof String)) {
+            return 0;
+        }
+        var imported = 0;
+        var start = 0;
+        for (var i = 0; i <= raw.length(); i++) {
+            var isEnd = (i == raw.length());
+            if (isEnd || raw.substring(i, i + 1).equals("\n")) {
+                var line = raw.substring(start, i);
+                if (line.length() > 0 && line.substring(line.length() - 1, line.length()).equals("\r")) {
+                    line = line.substring(0, line.length() - 1);
+                }
+                if (line.length() > 0 && !line.substring(0, 1).equals("#")) {
+                    if (importMonthString(line)) {
+                        imported++;
+                    }
+                }
+                start = i + 1;
+            }
+        }
+        return imported;
     }
 }

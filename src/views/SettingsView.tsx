@@ -1,18 +1,22 @@
 import React, { useRef, useState } from 'react';
 import {
+  Check,
   ChevronDown,
   ChevronUp,
+  Copy,
   Download,
   Eye,
   EyeOff,
   KeyRound,
   Plus,
+  RefreshCw,
   ShieldCheck,
   Smartphone,
   Sparkles,
   Trash2,
   Upload,
   UserPlus,
+  Watch,
 } from 'lucide-react';
 import { USER_COLOR_PALETTE } from '../constants/shifts';
 import { useApp } from '../context/AppContext';
@@ -31,6 +35,8 @@ export const SettingsView: React.FC = () => {
     upsertHolidayEntries,
     deleteHolidayEntry,
     updateSettings,
+    garminSyncState,
+    syncGarminNow,
     refreshAll,
   } = useApp();
 
@@ -53,6 +59,22 @@ export const SettingsView: React.FC = () => {
   const [includeImages, setIncludeImages] = useState(true);
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  // Garmin Sync
+  const [showGithubToken, setShowGithubToken] = useState(false);
+  const [showGarminGuide, setShowGarminGuide] = useState(false);
+  const [copiedGarminUrl, setCopiedGarminUrl] = useState(false);
+
+  const handleCopyGarminUrl = async () => {
+    if (!settings.garminGistRawUrl) return;
+    try {
+      await navigator.clipboard.writeText(settings.garminGistRawUrl);
+      setCopiedGarminUrl(true);
+      setTimeout(() => setCopiedGarminUrl(false), 2000);
+    } catch {
+      // Fallback silencioso si el navegador bloquea el portapapeles
+    }
+  };
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -519,6 +541,178 @@ export const SettingsView: React.FC = () => {
 
         {backupNotice && (
           <p className="text-xs text-emerald-300 text-center">{backupNotice}</p>
+        )}
+      </section>
+
+      {/* Sincronización Garmin Fenix 6X Pro */}
+      <section className="tactical-card rounded-2xl p-3.5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Watch className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white">Sincronización Garmin Fenix 6X Pro</h3>
+          </div>
+          {garminSyncState.status === 'ok' && (
+            <span className="text-[11px] text-emerald-400">Sincronizado</span>
+          )}
+          {garminSyncState.status === 'error' && (
+            <span className="text-[11px] text-rose-400">Error</span>
+          )}
+        </div>
+
+        <label className="flex items-center justify-between gap-2 text-xs text-slate-300 cursor-pointer">
+          <span>Sincronizar automáticamente al cambiar turnos de ZETO</span>
+          <input
+            type="checkbox"
+            checked={Boolean(settings.garminSyncEnabled)}
+            onChange={(e) =>
+              void updateSettings({ ...settings, garminSyncEnabled: e.target.checked })
+            }
+            className="w-4 h-4 accent-emerald-500"
+          />
+        </label>
+
+        <div className="space-y-2">
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">
+              GitHub Token (permiso <code>gist</code>)
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                type={showGithubToken ? 'text' : 'password'}
+                value={settings.githubToken ?? ''}
+                onChange={(e) =>
+                  void updateSettings({ ...settings, githubToken: e.target.value })
+                }
+                placeholder="ghp_... o github_pat_..."
+                className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowGithubToken((s) => !s)}
+                className="px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-300"
+                aria-label="Mostrar u ocultar token de GitHub"
+              >
+                {showGithubToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] text-slate-400 mb-1">
+              Gist ID (opcional, se crea automáticamente al sincronizar)
+            </label>
+            <input
+              type="text"
+              value={settings.garminGistId ?? ''}
+              onChange={(e) =>
+                void updateSettings({ ...settings, garminGistId: e.target.value })
+              }
+              placeholder="Se crea automáticamente al sincronizar"
+              className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+            />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          disabled={garminSyncState.status === 'syncing'}
+          onClick={() => void syncGarminNow()}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-500 text-[#0B0F17] text-xs font-bold disabled:opacity-60"
+        >
+          <RefreshCw
+            className={`w-4 h-4 ${garminSyncState.status === 'syncing' ? 'animate-spin' : ''}`}
+          />
+          <span>
+            {garminSyncState.status === 'syncing' ? 'Sincronizando...' : 'Sincronizar ahora'}
+          </span>
+        </button>
+
+        {garminSyncState.message && (
+          <p
+            className={`text-[11px] text-center ${
+              garminSyncState.status === 'error' ? 'text-rose-300' : 'text-emerald-300'
+            }`}
+          >
+            {garminSyncState.message}
+          </p>
+        )}
+
+        {(garminSyncState.lastSyncAt ?? settings.garminLastSyncAt) && (
+          <p className="text-[11px] text-slate-400 text-center">
+            Última subida:{' '}
+            {new Date(
+              (garminSyncState.lastSyncAt ?? settings.garminLastSyncAt) as number
+            ).toLocaleString('es-ES')}
+          </p>
+        )}
+
+        {settings.garminGistRawUrl && (
+          <div className="space-y-1.5 pt-1">
+            <label className="block text-[11px] text-slate-400">
+              URL de sincronización (secreto <code>GARMIN_SYNC_URL</code>)
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                readOnly
+                value={settings.garminGistRawUrl}
+                className="flex-1 px-2.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-emerald-300 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => void handleCopyGarminUrl()}
+                className="flex items-center gap-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-white shrink-0"
+              >
+                {copiedGarminUrl ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Copiada</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Copiar URL</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowGarminGuide((g) => !g)}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-emerald-300 font-medium"
+        >
+          <span>¿Cómo vincular tu Garmin Fenix 6X Pro?</span>
+          {showGarminGuide ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
+        </button>
+
+        {showGarminGuide && (
+          <ol className="text-[11px] text-slate-300 space-y-1.5 pl-4 list-decimal bg-slate-900/60 p-3 rounded-xl border border-slate-800">
+            <li>
+              En GitHub ve a{' '}
+              <strong>Settings → Developer settings → Personal access tokens → Tokens (classic)</strong>{' '}
+              y crea un token marcando únicamente el permiso <code>gist</code>.
+            </li>
+            <li>
+              Pega el token arriba, activa la sincronización automática y pulsa{' '}
+              <strong>Sincronizar ahora</strong> (BEW creará tu Gist privado automáticamente).
+            </li>
+            <li>
+              Copia la <strong>URL de sincronización</strong> generada y añádela como secreto{' '}
+              <code>GARMIN_SYNC_URL</code> en tu repositorio de GitHub (
+              <strong>Settings → Secrets and variables → Actions</strong>).
+            </li>
+            <li>
+              Ejecuta el workflow de GitHub Actions para generar <code>BEW-Fenix6XPro.prg</code> ya
+              vinculado y cópialo en <code>GARMIN/APPS/</code> de tu reloj.
+            </li>
+          </ol>
         )}
       </section>
 

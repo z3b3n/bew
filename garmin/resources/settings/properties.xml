@@ -1,4 +1,5 @@
 <properties>
     <property id="month1Data" type="string"></property>
     <property id="month2Data" type="string"></property>
+    <property id="syncUrl" type="string"></property>
 </properties>

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_SETTINGS,
   PRIMARY_USER_ID,
@@ -19,6 +19,7 @@ import {
   removeSwap,
   removeUserAndData,
 } from '../db/indexedDb';
+import { pushShiftsToGarminGist } from '../services/garminSync';
 import type {
   AppSettings,
   HolidayEntry,
@@ -28,6 +29,12 @@ import type {
   User,
 } from '../types';
 import { getMonthKey } from '../utils/dateUtils';
+
+export interface GarminSyncState {
+  status: 'idle' | 'syncing' | 'ok' | 'error';
+  message?: string;
+  lastSyncAt?: number;
+}
 
 interface AppContextValue {
   users: User[];
@@ -52,6 +59,8 @@ interface AppContextValue {
   settleSwap: (swapId: string, settledNote?: string) => Promise<void>;
   deleteSwap: (swapId: string) => Promise<void>;
   updateSettings: (settings: AppSettings) => Promise<void>;
+  garminSyncState: GarminSyncState;
+  syncGarminNow: () => Promise<void>;
   refreshAll: () => Promise<void>;
 }
 
@@ -64,6 +73,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [swaps, setSwaps] = useState<ShiftSwap[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
+  const [garminSyncState, setGarminSyncState] = useState<GarminSyncState>({ status: 'idle' });
+  const settingsRef = useRef<AppSettings>(DEFAULT_SETTINGS);
+  const syncTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    return () => {
+      if (syncTimerRef.current !== null) {
+        window.clearTimeout(syncTimerRef.current);
+      }
+    };
+  }, []);
 
   const refreshAll = useCallback(async () => {
     await ensureSeedData();
@@ -79,6 +103,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setHolidays(h);
     setSwaps(sw);
     setSettings(st);
+    settingsRef.current = st;
+    if (st.garminLastSyncAt) {
+      setGarminSyncState((prev) =>
+        prev.status === 'idle' ? { status: 'ok', lastSyncAt: st.garminLastSyncAt } : prev
+      );
+    }
     setLoading(false);
   }, []);
 
@@ -110,12 +140,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return new Set(holidays.map((h) => h.date));
   }, [holidays]);
 
+  const syncGarminNow = useCallback(async () => {
+    const latestSettings = await getSettings();
+    const token = latestSettings.githubToken?.trim() ?? '';
+    if (!token) {
+      setGarminSyncState({
+        status: 'error',
+        message: 'Configura tu GitHub Token en Ajustes.',
+        lastSyncAt: latestSettings.garminLastSyncAt,
+      });
+      return;
+    }
+
+    setGarminSyncState((prev) => ({
+      status: 'syncing',
+      lastSyncAt: prev.lastSyncAt ?? latestSettings.garminLastSyncAt,
+    }));
+
+    try {
+      const latestShifts = await getAllShifts();
+      const result = await pushShiftsToGarminGist({
+        token,
+        gistId: latestSettings.garminGistId,
+        shifts: latestShifts,
+        primaryUserId: PRIMARY_USER_ID,
+      });
+
+      const updatedSettings: AppSettings = {
+        ...latestSettings,
+        id: 'app',
+        garminGistId: result.gistId,
+        garminGistRawUrl: result.rawUrl,
+        garminLastSyncAt: result.syncedAt,
+      };
+      await putSettings(updatedSettings);
+      settingsRef.current = updatedSettings;
+      setSettings(updatedSettings);
+      setGarminSyncState({
+        status: 'ok',
+        message: 'Turnos sincronizados con Garmin.',
+        lastSyncAt: result.syncedAt,
+      });
+    } catch (err) {
+      setGarminSyncState({
+        status: 'error',
+        message: err instanceof Error ? err.message : 'Error al sincronizar con Garmin.',
+        lastSyncAt: latestSettings.garminLastSyncAt,
+      });
+    }
+  }, []);
+
+  const scheduleGarminAutoSync = useCallback(() => {
+    const current = settingsRef.current;
+    if (!current.garminSyncEnabled || !current.githubToken?.trim()) {
+      return;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
+    if (syncTimerRef.current !== null) {
+      window.clearTimeout(syncTimerRef.current);
+    }
+    syncTimerRef.current = window.setTimeout(() => {
+      syncTimerRef.current = null;
+      void syncGarminNow();
+    }, 1500);
+  }, [syncGarminNow]);
+
   const upsertShift = useCallback(
     async (userId: string, date: string, shift: ShiftCode | null, note?: string) => {
       const id = `${userId}_${date}`;
       if (shift === null) {
         await removeShift(id);
         setShifts((prev) => prev.filter((item) => item.id !== id));
+        if (userId === PRIMARY_USER_ID) {
+          scheduleGarminAutoSync();
+        }
         return;
       }
       const entry: ShiftEntry = {
@@ -135,21 +235,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         copy[idx] = entry;
         return copy;
       });
+      if (userId === PRIMARY_USER_ID) {
+        scheduleGarminAutoSync();
+      }
     },
-    []
+    [scheduleGarminAutoSync]
   );
 
-  const batchApplyShifts = useCallback(async (entries: ShiftEntry[]) => {
-    if (entries.length === 0) return;
-    await putShiftsBatch(entries);
-    setShifts((prev) => {
-      const map = new Map(prev.map((item) => [item.id, item]));
-      for (const entry of entries) {
-        map.set(entry.id, entry);
+  const batchApplyShifts = useCallback(
+    async (entries: ShiftEntry[]) => {
+      if (entries.length === 0) return;
+      await putShiftsBatch(entries);
+      setShifts((prev) => {
+        const map = new Map(prev.map((item) => [item.id, item]));
+        for (const entry of entries) {
+          map.set(entry.id, entry);
+        }
+        return Array.from(map.values());
+      });
+      if (entries.some((e) => e.userId === PRIMARY_USER_ID)) {
+        scheduleGarminAutoSync();
       }
-      return Array.from(map.values());
-    });
-  }, []);
+    },
+    [scheduleGarminAutoSync]
+  );
 
   const toggleHoliday = useCallback(
     async (date: string, name?: string) => {
@@ -280,6 +389,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateSettings = useCallback(async (next: AppSettings) => {
     const normalized = { ...next, id: 'app' as const };
     await putSettings(normalized);
+    settingsRef.current = normalized;
     setSettings(normalized);
   }, []);
 
@@ -307,6 +417,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       settleSwap,
       deleteSwap,
       updateSettings,
+      garminSyncState,
+      syncGarminNow,
       refreshAll,
     }),
     [
@@ -332,6 +444,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       settleSwap,
       deleteSwap,
       updateSettings,
+      garminSyncState,
+      syncGarminNow,
       refreshAll,
     ]
   );

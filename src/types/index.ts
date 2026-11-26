@@ -77,6 +77,11 @@ export interface AppSettings {
   model: string;
   customEndpoint?: string;
   nightHoursMode: NightHoursMode;
+  garminSyncEnabled?: boolean;
+  githubToken?: string;
+  garminGistId?: string;
+  garminGistRawUrl?: string;
+  garminLastSyncAt?: number;
 }
 
 export type TabId = 'calendar' | 'team' | 'roster' | 'swaps' | 'stats' | 'settings';

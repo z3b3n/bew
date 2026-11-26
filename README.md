@@ -74,8 +74,15 @@ Descarga **`BEW-Android.apk`** desde la sección **Releases** e instálalo direc
 3. Copia `BEW-Fenix6XPro.prg` dentro de la carpeta **`GARMIN/APPS/`** del reloj y desconéctalo de forma segura.
 4. En el reloj, desliza por los widgets (Glances) para ver **BEW · HOY** y el turno de mañana; pulsa **START** para abrir el widget completo:
    - **UP / DOWN:** cambiar de día.
-   - **START/SELECT:** cambiar el turno del día (`M → T → N → AD → AN → L`) y guardarlo en el reloj.
-   - **Mantener UP (Menú):** ir a **Hoy** o ver el **Resumen del Mes** (horas totales y conteo de turnos).
+   - **START/SELECT:** cambiar el turno del día (`M → T → N → AD → AN → VN → C → PO → AP → L → F`) y guardarlo en el reloj.
+   - **Mantener UP (Menú):** **Sincronizar** (descarga turnos desde el móvil), ir a **Hoy** o ver el **Resumen del Mes** (horas totales y conteo de turnos).
+
+### Sincronización Automática Móvil → Garmin (GitHub Gist)
+1. Crea un **Personal Access Token (classic)** en GitHub con el permiso **`gist`**.
+2. En la app **BEW** ve a **Ajustes → Sincronización Garmin Fenix 6X Pro**, pega tu token, activa la sincronización automática y pulsa **Sincronizar ahora** (se creará un Gist privado automáticamente).
+3. Copia la **URL de sincronización** generada y guárdala como secreto **`GARMIN_SYNC_URL`** en tu repositorio de GitHub (**Settings → Secrets and variables → Actions**).
+4. Ejecuta el workflow de GitHub Actions para compilar `BEW-Fenix6XPro.prg` ya vinculado a tu Gist y cópialo en `GARMIN/APPS/`.
+5. A partir de ese momento, cada cambio en tus turnos de **ZETO** en el móvil se sube al Gist y el reloj lo descarga automáticamente al abrir el widget (con el móvil conectado por Bluetooth a Garmin Connect).
 
 ---
 

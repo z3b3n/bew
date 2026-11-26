@@ -44,7 +44,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             APP_VERSION="${GITHUB_REF_NAME#v}"
           else
-            APP_VERSION="1.3.5"
+            APP_VERSION="1.4.0"
           fi
           echo "APP_VERSION=${APP_VERSION}" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
@@ -152,6 +152,21 @@ jobs:
         run: |
           openssl genrsa -out ./developer_key.pem 4096
           openssl pkcs8 -topk8 -inform PEM -outform DER -in ./developer_key.pem -out ./developer_key.der -nocrypt
+
+      - name: Inject GARMIN_SYNC_URL into BewSyncConfig.mc
+        env:
+          GARMIN_SYNC_URL: ${{ secrets.GARMIN_SYNC_URL }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          url = os.environ.get("GARMIN_SYNC_URL", "").strip()
+          if url:
+              cfg = pathlib.Path("./garmin/source/BewSyncConfig.mc")
+              cfg.write_text(f"module BewSyncConfig {{\n    const DEFAULT_SYNC_URL = {json.dumps(url)};\n}}\n", encoding="utf-8")
+              print("Injected GARMIN_SYNC_URL into BewSyncConfig.mc")
+          else:
+              print("GARMIN_SYNC_URL secret not set; building with empty default URL")
+          PY
 
       - name: Build Garmin Widget for Fenix 6X Pro
         uses: blackshadev/garmin-connectiq-build-action@9.2.0
